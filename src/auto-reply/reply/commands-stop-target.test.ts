@@ -45,7 +45,7 @@ vi.mock("./abort.js", () => ({
   stopSubagentsForRequester: stopSubagentsForRequesterMock,
 }));
 
-vi.mock("./commands-session-store.js", () => ({
+vi.mock("./commands-session-entry.js", () => ({
   persistAbortTargetEntry: persistAbortTargetEntryMock,
 }));
 
@@ -116,7 +116,7 @@ function buildStopParams(): HandleCommandsParams {
       updatedAt: Date.now(),
     },
     sessionStore: {},
-    storePath: "/tmp/sessions.json",
+    storePath: "/tmp/openclaw-agent.sqlite",
   } as unknown as HandleCommandsParams;
 }
 
