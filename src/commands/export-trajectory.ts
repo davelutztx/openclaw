@@ -1,5 +1,5 @@
 import path from "node:path";
-import { resolveSessionFilePath, resolveSessionFilePathOptions } from "../config/sessions/paths.js";
+import { createSqliteSessionTranscriptLocator } from "../config/sessions/paths.js";
 import { getSessionEntry } from "../config/sessions/store.js";
 import { hasSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -92,11 +92,10 @@ export async function exportTrajectoryCommand(
 
   let sessionFile: string;
   try {
-    sessionFile = resolveSessionFilePath(
-      entry.sessionId,
-      entry,
-      resolveSessionFilePathOptions({ agentId: targetAgentId }),
-    );
+    sessionFile = createSqliteSessionTranscriptLocator({
+      agentId: targetAgentId,
+      sessionId: entry.sessionId,
+    });
   } catch (error) {
     runtime.error(`Failed to resolve session file: ${formatErrorMessage(error)}`);
     runtime.exit(1);
