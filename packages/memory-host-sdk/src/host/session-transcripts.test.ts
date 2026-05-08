@@ -45,6 +45,7 @@ function seedTranscript(params: {
   sessionId: string;
   transcriptPath?: string;
   events: unknown[];
+  rememberPath?: boolean;
   now?: number;
 }): string {
   const agentId = params.agentId ?? "main";
@@ -54,7 +55,7 @@ function seedTranscript(params: {
   replaceSqliteSessionTranscriptEvents({
     agentId,
     sessionId: params.sessionId,
-    transcriptPath,
+    ...(params.rememberPath === false ? {} : { transcriptPath }),
     events: params.events,
     now: () => params.now ?? 1_770_000_000_000,
   });
@@ -76,6 +77,22 @@ describe("listSessionTranscriptsForAgent", () => {
     const files = await listSessionTranscriptsForAgent("main");
 
     expect(files).toEqual([includedPath]);
+  });
+
+  it("uses a virtual SQLite locator when no legacy transcript path is recorded", async () => {
+    seedTranscript({
+      sessionId: "sqlite-only",
+      events: [{ type: "message", message: { role: "user", content: "Stored only in SQLite" } }],
+      rememberPath: false,
+    });
+
+    const files = await listSessionTranscriptsForAgent("main");
+    const [locator] = files;
+
+    expect(locator).toBe("sqlite-transcript://main/sqlite-only.jsonl");
+    const entry = await buildSessionTranscriptEntry(locator);
+    expect(entry?.content).toBe("User: Stored only in SQLite");
+    expect(entry?.path).toBe("sessions/main/sqlite-only.jsonl");
   });
 });
 
