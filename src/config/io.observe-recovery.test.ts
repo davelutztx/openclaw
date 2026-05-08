@@ -3,7 +3,9 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import JSON5 from "json5";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { resetPluginStateStoreForTests } from "../plugin-state/plugin-state-store.js";
+import { listConfigAuditRecordsForTests } from "./io.audit.js";
 import { CONFIG_CLOBBER_SNAPSHOT_LIMIT } from "./io.clobber-snapshot.js";
 import {
   maybeRecoverSuspiciousConfigRead,
@@ -41,6 +43,10 @@ describe("config observe recovery", () => {
     await fsp.rm(fixtureRoot, { recursive: true, force: true });
   });
 
+  afterEach(() => {
+    resetPluginStateStoreForTests();
+  });
+
   async function seedConfig(configPath: string, config: Record<string, unknown>): Promise<void> {
     await fsp.mkdir(path.dirname(configPath), { recursive: true });
     await fsp.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
@@ -66,10 +72,11 @@ describe("config observe recovery", () => {
   }
 
   async function readObserveEvents(auditPath: string): Promise<Record<string, unknown>[]> {
-    const lines = (await fsp.readFile(auditPath, "utf-8")).trim().split("\n").filter(Boolean);
-    return lines
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
-      .filter((line) => line.event === "config.observe");
+    const stateDir = path.dirname(path.dirname(auditPath));
+    return listConfigAuditRecordsForTests({
+      env: { OPENCLAW_STATE_DIR: stateDir } as NodeJS.ProcessEnv,
+      homedir: () => path.dirname(stateDir),
+    }).filter((line) => line.event === "config.observe") as Record<string, unknown>[];
   }
 
   async function listClobberFiles(configPath: string): Promise<string[]> {
