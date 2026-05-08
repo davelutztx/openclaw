@@ -9,8 +9,13 @@ import {
   resolveAgentIdFromSessionKey,
   resolveAgentMainSessionKey,
   resolveMainSessionKey,
-  resolveStorePath,
 } from "../config/sessions.js";
+import {
+  deleteSessionEntry,
+  listSessionEntries,
+  upsertSessionEntry,
+} from "../config/sessions/store.js";
+import type { SessionEntry } from "../config/sessions/types.js";
 import { getActivePluginRegistry, setActivePluginRegistry } from "../plugins/runtime.js";
 import { buildAgentPeerSessionKey } from "../routing/session-key.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
@@ -31,6 +36,7 @@ import { enqueueSystemEvent, resetSystemEventsForTest } from "./system-events.js
 
 let previousRegistry: ReturnType<typeof getActivePluginRegistry> | null = null;
 let testRegistry: ReturnType<typeof getActivePluginRegistry> | null = null;
+let previousStateDir: string | undefined;
 
 let fixtureRoot = "";
 let fixtureCount = 0;
@@ -152,11 +158,38 @@ function resolveWhatsAppTargetForTest(params: {
 const createCaseDir = async (prefix: string) => {
   const dir = path.join(fixtureRoot, `${prefix}-${fixtureCount++}`);
   await fs.mkdir(dir, { recursive: true });
+  process.env.OPENCLAW_STATE_DIR = dir;
   return dir;
 };
 
+type TestSessionRowsTarget = {
+  agentId: string;
+  sessionsDir: string;
+};
+
+function sessionRowsTarget(root: string, agentId = "main"): TestSessionRowsTarget {
+  return {
+    agentId,
+    sessionsDir: path.join(root, "agents", agentId, "sessions"),
+  };
+}
+
+async function replaceTestSessionRows(
+  target: TestSessionRowsTarget,
+  store: Record<string, SessionEntry>,
+): Promise<void> {
+  const { agentId } = target;
+  for (const { sessionKey } of listSessionEntries({ agentId })) {
+    deleteSessionEntry({ agentId, sessionKey });
+  }
+  for (const [sessionKey, entry] of Object.entries(store)) {
+    upsertSessionEntry({ agentId, sessionKey, entry });
+  }
+}
+
 beforeAll(async () => {
   previousRegistry = getActivePluginRegistry();
+  previousStateDir = process.env.OPENCLAW_STATE_DIR;
 
   const whatsappPlugin = createOutboundTestPlugin({
     id: "whatsapp",
@@ -237,6 +270,11 @@ afterAll(async () => {
   }
   if (previousRegistry) {
     setActivePluginRegistry(previousRegistry);
+  }
+  if (previousStateDir === undefined) {
+    delete process.env.OPENCLAW_STATE_DIR;
+  } else {
+    process.env.OPENCLAW_STATE_DIR = previousStateDir;
   }
 });
 
@@ -654,7 +692,7 @@ describe("runHeartbeatOnce", () => {
 
   it("uses the last non-empty payload for delivery", async () => {
     const tmpDir = await createCaseDir("hb-last-payload");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir);
     const replySpy = vi.fn();
     try {
       const cfg: OpenClawConfig = {
@@ -665,21 +703,18 @@ describe("runHeartbeatOnce", () => {
           },
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
-        session: { store: storePath },
+        session: {},
       };
       const sessionKey = resolveMainSessionKey(cfg);
 
-      await fs.writeFile(
-        storePath,
-        JSON.stringify({
-          [sessionKey]: {
-            sessionId: "sid",
-            updatedAt: Date.now(),
-            lastChannel: "whatsapp",
-            lastTo: "120363401234567890@g.us",
-          },
-        }),
-      );
+      await replaceTestSessionRows(target, {
+        [sessionKey]: {
+          sessionId: "sid",
+          updatedAt: Date.now(),
+          lastChannel: "whatsapp",
+          lastTo: "120363401234567890@g.us",
+        },
+      });
 
       replySpy.mockResolvedValue([{ text: "Let me check..." }, { text: "Final alert" }]);
       const sendWhatsApp = vi
@@ -713,7 +748,7 @@ describe("runHeartbeatOnce", () => {
 
   it("uses per-agent heartbeat overrides and session keys", async () => {
     const tmpDir = await createCaseDir("hb-agent-overrides");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir, "ops");
     const replySpy = vi.fn();
     try {
       const cfg: OpenClawConfig = {
@@ -731,21 +766,18 @@ describe("runHeartbeatOnce", () => {
           ],
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
-        session: { store: storePath },
+        session: {},
       };
       const sessionKey = resolveAgentMainSessionKey({ cfg, agentId: "ops" });
 
-      await fs.writeFile(
-        storePath,
-        JSON.stringify({
-          [sessionKey]: {
-            sessionId: "sid",
-            updatedAt: Date.now(),
-            lastChannel: "whatsapp",
-            lastTo: "120363401234567890@g.us",
-          },
-        }),
-      );
+      await replaceTestSessionRows(target, {
+        [sessionKey]: {
+          sessionId: "sid",
+          updatedAt: Date.now(),
+          lastChannel: "whatsapp",
+          lastTo: "120363401234567890@g.us",
+        },
+      });
       replySpy.mockResolvedValue([{ text: "Final alert" }]);
       const sendWhatsApp = vi
         .fn<
@@ -790,7 +822,6 @@ describe("runHeartbeatOnce", () => {
 
   it("reuses non-default agent sessionFile from templated stores", async () => {
     const tmpDir = await createCaseDir("hb-templated-store");
-    const storeTemplate = path.join(tmpDir, "agents", "{agentId}", "sessions", "sessions.json");
     const replySpy = vi.fn();
     const agentId = "ops";
     try {
@@ -809,28 +840,23 @@ describe("runHeartbeatOnce", () => {
           ],
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
-        session: { store: storeTemplate },
+        session: {},
       };
       const sessionKey = resolveAgentMainSessionKey({ cfg, agentId });
-      const storePath = resolveStorePath(storeTemplate, { agentId });
-      const sessionsDir = path.dirname(storePath);
+      const target = sessionRowsTarget(tmpDir, agentId);
+      const { sessionsDir } = target;
       const sessionId = "sid-ops";
       const sessionFile = path.join(sessionsDir, `${sessionId}.jsonl`);
 
-      await fs.mkdir(sessionsDir, { recursive: true });
-      await fs.writeFile(sessionFile, "", "utf-8");
-      await fs.writeFile(
-        storePath,
-        JSON.stringify({
-          [sessionKey]: {
-            sessionId,
-            sessionFile,
-            updatedAt: Date.now(),
-            lastChannel: "whatsapp",
-            lastTo: "120363401234567890@g.us",
-          },
-        }),
-      );
+      await replaceTestSessionRows(target, {
+        [sessionKey]: {
+          sessionId,
+          sessionFile,
+          updatedAt: Date.now(),
+          lastChannel: "whatsapp",
+          lastTo: "120363401234567890@g.us",
+        },
+      });
 
       replySpy.mockResolvedValue([{ text: "Final alert" }]);
       const sendWhatsApp = vi
@@ -904,7 +930,7 @@ describe("runHeartbeatOnce", () => {
       const replySpy = vi.fn();
       try {
         const tmpDir = await createCaseDir(caseDir);
-        const storePath = path.join(tmpDir, "sessions.json");
+        const target = sessionRowsTarget(tmpDir);
         const cfg: OpenClawConfig = {
           agents: {
             defaults: {
@@ -916,7 +942,7 @@ describe("runHeartbeatOnce", () => {
             },
           },
           channels: { whatsapp: { allowFrom: ["*"] } },
-          session: { store: storePath },
+          session: {},
         };
         const mainSessionKey = resolveMainSessionKey(cfg);
         const agentId = resolveAgentIdFromSessionKey(mainSessionKey);
@@ -928,23 +954,20 @@ describe("runHeartbeatOnce", () => {
         });
         applyOverride({ cfg, sessionKey: overrideSessionKey });
 
-        await fs.writeFile(
-          storePath,
-          JSON.stringify({
-            [mainSessionKey]: {
-              sessionId: "sid-main",
-              updatedAt: Date.now(),
-              lastChannel: "whatsapp",
-              lastTo: "120363401234567890@g.us",
-            },
-            [overrideSessionKey]: {
-              sessionId: `sid-${peerKind}`,
-              updatedAt: Date.now() + 10_000,
-              lastChannel: "whatsapp",
-              lastTo: peerId,
-            },
-          }),
-        );
+        await replaceTestSessionRows(target, {
+          [mainSessionKey]: {
+            sessionId: "sid-main",
+            updatedAt: Date.now(),
+            lastChannel: "whatsapp",
+            lastTo: "120363401234567890@g.us",
+          },
+          [overrideSessionKey]: {
+            sessionId: `sid-${peerKind}`,
+            updatedAt: Date.now() + 10_000,
+            lastChannel: "whatsapp",
+            lastTo: peerId,
+          },
+        });
 
         replySpy.mockClear();
         replySpy.mockResolvedValue([{ text: message }]);
@@ -995,7 +1018,7 @@ describe("runHeartbeatOnce", () => {
     const replySpy = vi.fn();
     try {
       const tmpDir = await createCaseDir("hb-subagent-guard");
-      const storePath = path.join(tmpDir, "sessions.json");
+      const target = sessionRowsTarget(tmpDir);
       const cfg: OpenClawConfig = {
         agents: {
           defaults: {
@@ -1007,7 +1030,7 @@ describe("runHeartbeatOnce", () => {
           },
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
-        session: { store: storePath },
+        session: {},
       };
       const mainSessionKey = resolveMainSessionKey(cfg);
       const agentId = resolveAgentIdFromSessionKey(mainSessionKey);
@@ -1017,23 +1040,20 @@ describe("runHeartbeatOnce", () => {
         cfg.agents.defaults.heartbeat.session = subagentKey;
       }
 
-      await fs.writeFile(
-        storePath,
-        JSON.stringify({
-          [mainSessionKey]: {
-            sessionId: "sid-main",
-            updatedAt: Date.now(),
-            lastChannel: "whatsapp",
-            lastTo: "120363401234567890@g.us",
-          },
-          [subagentKey]: {
-            sessionId: "sid-subagent",
-            updatedAt: Date.now() + 10_000,
-            lastChannel: "whatsapp",
-            lastTo: "99999@g.us",
-          },
-        }),
-      );
+      await replaceTestSessionRows(target, {
+        [mainSessionKey]: {
+          sessionId: "sid-main",
+          updatedAt: Date.now(),
+          lastChannel: "whatsapp",
+          lastTo: "120363401234567890@g.us",
+        },
+        [subagentKey]: {
+          sessionId: "sid-subagent",
+          updatedAt: Date.now() + 10_000,
+          lastChannel: "whatsapp",
+          lastTo: "99999@g.us",
+        },
+      });
 
       replySpy.mockClear();
       replySpy.mockResolvedValue([{ text: "Main session heartbeat" }]);
@@ -1076,7 +1096,7 @@ describe("runHeartbeatOnce", () => {
 
   it("suppresses duplicate heartbeat payloads within 24h", async () => {
     const tmpDir = await createCaseDir("hb-dup-suppress");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir);
     const replySpy = vi.fn();
     try {
       const cfg: OpenClawConfig = {
@@ -1087,23 +1107,20 @@ describe("runHeartbeatOnce", () => {
           },
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
-        session: { store: storePath },
+        session: {},
       };
       const sessionKey = resolveMainSessionKey(cfg);
 
-      await fs.writeFile(
-        storePath,
-        JSON.stringify({
-          [sessionKey]: {
-            sessionId: "sid",
-            updatedAt: Date.now(),
-            lastChannel: "whatsapp",
-            lastTo: "120363401234567890@g.us",
-            lastHeartbeatText: "Final alert",
-            lastHeartbeatSentAt: 0,
-          },
-        }),
-      );
+      await replaceTestSessionRows(target, {
+        [sessionKey]: {
+          sessionId: "sid",
+          updatedAt: Date.now(),
+          lastChannel: "whatsapp",
+          lastTo: "120363401234567890@g.us",
+          lastHeartbeatText: "Final alert",
+          lastHeartbeatSentAt: 0,
+        },
+      });
 
       replySpy.mockResolvedValue([{ text: "Final alert" }]);
       const sendWhatsApp = vi
@@ -1162,7 +1179,7 @@ describe("runHeartbeatOnce", () => {
       const replySpy = vi.fn();
       try {
         const tmpDir = await createCaseDir(caseDir);
-        const storePath = path.join(tmpDir, "sessions.json");
+        const target = sessionRowsTarget(tmpDir);
         const cfg: OpenClawConfig = {
           agents: {
             defaults: {
@@ -1175,22 +1192,18 @@ describe("runHeartbeatOnce", () => {
             },
           },
           channels: { whatsapp: { allowFrom: ["*"] } },
-          session: { store: storePath },
+          session: {},
         };
         const sessionKey = resolveMainSessionKey(cfg);
 
-        await fs.writeFile(
-          storePath,
-          JSON.stringify({
-            [sessionKey]: {
-              sessionId: "sid",
-              updatedAt: Date.now(),
-              lastChannel: "whatsapp",
-              lastProvider: "whatsapp",
-              lastTo: "120363401234567890@g.us",
-            },
-          }),
-        );
+        await replaceTestSessionRows(target, {
+          [sessionKey]: {
+            sessionId: "sid",
+            updatedAt: Date.now(),
+            lastChannel: "whatsapp",
+            lastTo: "120363401234567890@g.us",
+          },
+        });
 
         replySpy.mockClear();
         replySpy.mockResolvedValue(replies);
@@ -1226,7 +1239,6 @@ describe("runHeartbeatOnce", () => {
 
   it("loads the default agent session from templated stores", async () => {
     const tmpDir = await createCaseDir("openclaw-hb");
-    const storeTemplate = path.join(tmpDir, "agents", "{agentId}", "sessions.json");
     const replySpy = vi.fn();
     try {
       const cfg: OpenClawConfig = {
@@ -1235,25 +1247,20 @@ describe("runHeartbeatOnce", () => {
           list: [{ id: "work", default: true }],
         },
         channels: { whatsapp: { allowFrom: ["*"] } },
-        session: { store: storeTemplate },
+        session: {},
       };
       const sessionKey = resolveMainSessionKey(cfg);
       const agentId = resolveAgentIdFromSessionKey(sessionKey);
-      const storePath = resolveStorePath(storeTemplate, { agentId });
+      const target = sessionRowsTarget(tmpDir, agentId);
 
-      await fs.mkdir(path.dirname(storePath), { recursive: true });
-      await fs.writeFile(
-        storePath,
-        JSON.stringify({
-          [sessionKey]: {
-            sessionId: "sid",
-            updatedAt: Date.now(),
-            lastChannel: "whatsapp",
-            lastProvider: "whatsapp",
-            lastTo: "120363401234567890@g.us",
-          },
-        }),
-      );
+      await replaceTestSessionRows(target, {
+        [sessionKey]: {
+          sessionId: "sid",
+          updatedAt: Date.now(),
+          lastChannel: "whatsapp",
+          lastTo: "120363401234567890@g.us",
+        },
+      });
 
       replySpy.mockResolvedValue({ text: "Hello from heartbeat" });
       const sendWhatsApp = vi
@@ -1301,7 +1308,7 @@ describe("runHeartbeatOnce", () => {
     replyText?: string;
   }) {
     const tmpDir = await createCaseDir("openclaw-hb");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir);
     const workspaceDir = path.join(tmpDir, "workspace");
     await fs.mkdir(workspaceDir, { recursive: true });
 
@@ -1365,20 +1372,17 @@ describe("runHeartbeatOnce", () => {
         },
       },
       channels: { whatsapp: { allowFrom: ["*"] } },
-      session: { store: storePath },
+      session: {},
     };
     const sessionKey = resolveMainSessionKey(cfg);
-    await fs.writeFile(
-      storePath,
-      JSON.stringify({
-        [sessionKey]: {
-          sessionId: "sid",
-          updatedAt: Date.now(),
-          lastChannel: "whatsapp",
-          lastTo: "120363401234567890@g.us",
-        },
-      }),
-    );
+    await replaceTestSessionRows(target, {
+      [sessionKey]: {
+        sessionId: "sid",
+        updatedAt: Date.now(),
+        lastChannel: "whatsapp",
+        lastTo: "120363401234567890@g.us",
+      },
+    });
     if (params.queueCronEvent) {
       enqueueSystemEvent("Cron: QMD maintenance completed", {
         sessionKey,
@@ -1427,7 +1431,7 @@ describe("runHeartbeatOnce", () => {
 
   it("keeps non-task HEARTBEAT.md context while stripping blank-line-separated task blocks", async () => {
     const tmpDir = await createCaseDir("openclaw-hb-tasks-context");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir);
     const workspaceDir = path.join(tmpDir, "workspace");
     await fs.mkdir(workspaceDir, { recursive: true });
     await fs.writeFile(
@@ -1460,19 +1464,16 @@ Some global directive after tasks.
         },
       },
       channels: { whatsapp: { allowFrom: ["*"] } },
-      session: { store: storePath },
+      session: {},
     };
-    await fs.writeFile(
-      storePath,
-      JSON.stringify({
-        [resolveMainSessionKey(cfg)]: {
-          sessionId: "sid",
-          updatedAt: Date.now(),
-          lastChannel: "whatsapp",
-          lastTo: "120363401234567890@g.us",
-        },
-      }),
-    );
+    await replaceTestSessionRows(target, {
+      [resolveMainSessionKey(cfg)]: {
+        sessionId: "sid",
+        updatedAt: Date.now(),
+        lastChannel: "whatsapp",
+        lastTo: "120363401234567890@g.us",
+      },
+    });
     const replySpy = vi.fn().mockResolvedValue({ text: "Handled due heartbeat tasks" });
     const sendWhatsApp = vi
       .fn<
@@ -1502,7 +1503,7 @@ Some global directive after tasks.
 
   it("strips documented unindented task entries while keeping following top-level bullets", async () => {
     const tmpDir = await createCaseDir("openclaw-hb-unindented-tasks-context");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir);
     const workspaceDir = path.join(tmpDir, "workspace");
     await fs.mkdir(workspaceDir, { recursive: true });
     await fs.writeFile(
@@ -1531,19 +1532,16 @@ tasks:
         },
       },
       channels: { whatsapp: { allowFrom: ["*"] } },
-      session: { store: storePath },
+      session: {},
     };
-    await fs.writeFile(
-      storePath,
-      JSON.stringify({
-        [resolveMainSessionKey(cfg)]: {
-          sessionId: "sid",
-          updatedAt: Date.now(),
-          lastChannel: "whatsapp",
-          lastTo: "120363401234567890@g.us",
-        },
-      }),
-    );
+    await replaceTestSessionRows(target, {
+      [resolveMainSessionKey(cfg)]: {
+        sessionId: "sid",
+        updatedAt: Date.now(),
+        lastChannel: "whatsapp",
+        lastTo: "120363401234567890@g.us",
+      },
+    });
     const replySpy = vi.fn().mockResolvedValue({ text: "Handled due heartbeat tasks" });
     const sendWhatsApp = vi
       .fn<
@@ -1708,7 +1706,7 @@ tasks:
 
   it("uses an internal-only cron prompt when heartbeat delivery target is none", async () => {
     const tmpDir = await createCaseDir("hb-cron-target-none");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir);
     const cfg: OpenClawConfig = {
       agents: {
         defaults: {
@@ -1717,20 +1715,17 @@ tasks:
         },
       },
       channels: { whatsapp: { allowFrom: ["*"] } },
-      session: { store: storePath },
+      session: {},
     };
     const sessionKey = resolveMainSessionKey(cfg);
-    await fs.writeFile(
-      storePath,
-      JSON.stringify({
-        [sessionKey]: {
-          sessionId: "sid",
-          updatedAt: Date.now(),
-          lastChannel: "whatsapp",
-          lastTo: "120363401234567890@g.us",
-        },
-      }),
-    );
+    await replaceTestSessionRows(target, {
+      [sessionKey]: {
+        sessionId: "sid",
+        updatedAt: Date.now(),
+        lastChannel: "whatsapp",
+        lastTo: "120363401234567890@g.us",
+      },
+    });
     enqueueSystemEvent("Cron: rotate logs", {
       sessionKey,
       contextKey: "cron:rotate-logs",
@@ -1765,7 +1760,7 @@ tasks:
 
   it("uses an internal-only exec prompt when heartbeat delivery target is none", async () => {
     const tmpDir = await createCaseDir("hb-exec-target-none");
-    const storePath = path.join(tmpDir, "sessions.json");
+    const target = sessionRowsTarget(tmpDir);
     const cfg: OpenClawConfig = {
       agents: {
         defaults: {
@@ -1774,20 +1769,17 @@ tasks:
         },
       },
       channels: { whatsapp: { allowFrom: ["*"] } },
-      session: { store: storePath },
+      session: {},
     };
     const sessionKey = resolveMainSessionKey(cfg);
-    await fs.writeFile(
-      storePath,
-      JSON.stringify({
-        [sessionKey]: {
-          sessionId: "sid",
-          updatedAt: Date.now(),
-          lastChannel: "whatsapp",
-          lastTo: "120363401234567890@g.us",
-        },
-      }),
-    );
+    await replaceTestSessionRows(target, {
+      [sessionKey]: {
+        sessionId: "sid",
+        updatedAt: Date.now(),
+        lastChannel: "whatsapp",
+        lastTo: "120363401234567890@g.us",
+      },
+    });
     enqueueSystemEvent("exec finished: backup completed", {
       sessionKey,
       contextKey: "exec:backup",
