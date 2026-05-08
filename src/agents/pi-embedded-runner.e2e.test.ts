@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import "./test-helpers/fast-coding-tools.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -246,13 +245,12 @@ const textFromContent = (content: unknown) => {
   return undefined;
 };
 
-const readSessionEntries = async (sessionFile: string) => {
-  const raw = await fs.readFile(sessionFile, "utf-8");
-  return raw
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { type?: string; customType?: string; data?: unknown });
-};
+const readSessionEntries = async (sessionFile: string) =>
+  SessionManager.open(sessionFile).getEntries() as Array<{
+    type?: string;
+    customType?: string;
+    data?: unknown;
+  }>;
 
 const readSessionMessages = async (sessionFile: string) => {
   const entries = await readSessionEntries(sessionFile);
@@ -332,7 +330,6 @@ describe("runEmbeddedPiAgent", () => {
     resolveSessionKeyForRequestMock.mockReturnValue({
       sessionKey: "agent:test:resolved",
       sessionStore: {},
-      storePath: "/tmp/session-store.json",
     });
     runEmbeddedAttemptMock.mockResolvedValueOnce(
       makeEmbeddedRunnerAttempt({
@@ -373,7 +370,6 @@ describe("runEmbeddedPiAgent", () => {
     resolveSessionKeyForRequestMock.mockReturnValue({
       sessionKey: undefined,
       sessionStore: {},
-      storePath: "/tmp/session-store.json",
     });
     runEmbeddedAttemptMock.mockResolvedValueOnce(
       makeEmbeddedRunnerAttempt({
@@ -450,7 +446,6 @@ describe("runEmbeddedPiAgent", () => {
     resolveStoredSessionKeyForSessionIdMock.mockReturnValue({
       sessionKey: "agent:test:resolved",
       sessionStore: {},
-      storePath: "/tmp/session-store.json",
     });
     runEmbeddedAttemptMock.mockResolvedValueOnce(
       makeEmbeddedRunnerAttempt({
@@ -642,16 +637,12 @@ describe("runEmbeddedPiAgent", () => {
       }),
     ).rejects.toThrow("boom");
 
-    try {
-      const messages = await readSessionMessages(sessionFile);
+    const messages = await readSessionMessages(sessionFile);
+    if (messages.length > 0) {
       const userIndex = messages.findIndex(
         (message) => message?.role === "user" && textFromContent(message.content) === "boom",
       );
       expect(userIndex).toBeGreaterThanOrEqual(0);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
-        throw err;
-      }
     }
   });
 
