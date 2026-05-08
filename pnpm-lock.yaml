@@ -351,19 +351,12 @@ importers:
       '@aws/bedrock-token-generator':
         specifier: ^1.1.0
         version: 1.1.0
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   extensions/anthropic:
-    dependencies:
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -374,9 +367,6 @@ importers:
       '@anthropic-ai/vertex-sdk':
         specifier: ^0.16.0
         version: 0.16.0(zod@4.4.3)
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -489,9 +479,6 @@ importers:
 
   extensions/codex:
     dependencies:
-      '@mariozechner/pi-coding-agent':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
       '@openai/codex':
         specifier: 0.129.0
         version: 0.129.0
@@ -709,10 +696,6 @@ importers:
         version: link:../../packages/plugin-sdk
 
   extensions/fireworks:
-    dependencies:
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -736,9 +719,6 @@ importers:
       '@google/genai':
         specifier: ^1.51.0
         version: 1.51.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -825,10 +805,6 @@ importers:
         version: link:../../packages/plugin-sdk
 
   extensions/kimi-coding:
-    dependencies:
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -863,11 +839,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
-  extensions/lmstudio:
-    dependencies:
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
+  extensions/lmstudio: {}
 
   extensions/lobster:
     dependencies:
@@ -1113,9 +1085,6 @@ importers:
 
   extensions/ollama:
     dependencies:
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
       typebox:
         specifier: 1.1.37
         version: 1.1.37
@@ -1132,9 +1101,6 @@ importers:
 
   extensions/openai:
     dependencies:
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
       ws:
         specifier: ^8.20.0
         version: 8.20.0
@@ -1562,9 +1528,6 @@ importers:
 
   extensions/xai:
     dependencies:
-      '@mariozechner/pi-ai':
-        specifier: 0.73.0
-        version: 0.73.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
       typebox:
         specifier: 1.1.37
         version: 1.1.37

@@ -116,7 +116,7 @@ describe("session cost usage", () => {
       });
 
       expect(await refreshCostUsageCache()).toBe("refreshed");
-      requestCostUsageCacheRefresh({ sessionFiles: [sessionPath(root, "sess-cache")] });
+      requestCostUsageCacheRefresh({ sessionTranscripts: [sessionPath(root, "sess-cache")] });
       const summary = await loadCostUsageSummaryFromCache({
         startMs: Date.parse("2026-02-05T00:00:00.000Z"),
         endMs: Date.parse("2026-02-06T00:00:00.000Z"),

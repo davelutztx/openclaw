@@ -1,13 +1,8 @@
 import path from "node:path";
-import {
-  resolveDefaultSessionStorePath,
-  resolveSessionFilePath,
-  resolveSessionFilePathOptions,
-} from "../config/sessions/paths.js";
-import { loadSessionStore } from "../config/sessions/store.js";
-import type { SessionEntry } from "../config/sessions/types.js";
+import { resolveSessionFilePath, resolveSessionFilePathOptions } from "../config/sessions/paths.js";
+import { getSessionEntry } from "../config/sessions/store.js";
+import { hasSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import { pathExists } from "../infra/fs-safe.js";
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import {
@@ -19,7 +14,6 @@ import {
 type ExportTrajectoryCommandOptions = {
   sessionKey?: string;
   output?: string;
-  store?: string;
   agent?: string;
   workspace?: string;
   json?: boolean;
@@ -29,7 +23,6 @@ type ExportTrajectoryCommandOptions = {
 type EncodedExportTrajectoryRequest = {
   sessionKey?: unknown;
   output?: unknown;
-  store?: unknown;
   agent?: unknown;
   workspace?: unknown;
 };
@@ -53,7 +46,6 @@ function decodeExportTrajectoryRequest(encoded: string): Partial<ExportTrajector
   return {
     sessionKey: readOptionalString(request.sessionKey) ?? "",
     output: readOptionalString(request.output),
-    store: readOptionalString(request.store),
     agent: readOptionalString(request.agent),
     workspace: readOptionalString(request.workspace),
   };
@@ -91,11 +83,7 @@ export async function exportTrajectoryCommand(
     return;
   }
   const targetAgentId = resolvedOpts.agent ?? resolveAgentIdFromSessionKey(sessionKey);
-  const storePath = resolvedOpts.store
-    ? path.resolve(resolvedOpts.store)
-    : resolveDefaultSessionStorePath(targetAgentId);
-  const store = loadSessionStore(storePath);
-  const entry = store[sessionKey] as SessionEntry | undefined;
+  const entry = getSessionEntry({ agentId: targetAgentId, sessionKey });
   if (!entry?.sessionId) {
     runtime.error(`Session not found: ${sessionKey}`);
     runtime.exit(1);
@@ -107,15 +95,17 @@ export async function exportTrajectoryCommand(
     sessionFile = resolveSessionFilePath(
       entry.sessionId,
       entry,
-      resolveSessionFilePathOptions({ agentId: targetAgentId, storePath }),
+      resolveSessionFilePathOptions({ agentId: targetAgentId }),
     );
   } catch (error) {
     runtime.error(`Failed to resolve session file: ${formatErrorMessage(error)}`);
     runtime.exit(1);
     return;
   }
-  if (!(await pathExists(sessionFile))) {
-    runtime.error("Session file not found.");
+  if (!hasSqliteSessionTranscriptEvents({ agentId: targetAgentId, sessionId: entry.sessionId })) {
+    runtime.error(
+      `Session transcript has not been migrated into SQLite. Run "openclaw doctor --fix" and try again.`,
+    );
     runtime.exit(1);
     return;
   }

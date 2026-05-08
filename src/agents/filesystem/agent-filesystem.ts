@@ -69,8 +69,38 @@ export type AgentToolArtifactStore = {
   deleteAll(): number;
 };
 
+export type AgentRunArtifact = {
+  agentId: string;
+  runId: string;
+  path: string;
+  kind: string;
+  metadata: Record<string, unknown>;
+  size: number;
+  createdAt: number;
+};
+
+export type AgentRunArtifactExport = AgentRunArtifact & {
+  blobBase64?: string;
+};
+
+export type AgentRunArtifactWriteOptions = {
+  path: string;
+  kind: string;
+  metadata?: Record<string, unknown>;
+  blob?: Buffer | string;
+};
+
+export type AgentRunArtifactStore = {
+  write(options: AgentRunArtifactWriteOptions): AgentRunArtifact;
+  list(prefix?: string): AgentRunArtifact[];
+  read(path: string): AgentRunArtifactExport | null;
+  export(prefix?: string): AgentRunArtifactExport[];
+  deleteAll(): number;
+};
+
 export type AgentFilesystem = {
   scratch: VirtualAgentFs;
   artifacts?: AgentToolArtifactStore;
+  runArtifacts?: AgentRunArtifactStore;
   workspace?: HostCapabilityFs;
 };
