@@ -330,6 +330,7 @@ internal fun newInvokeDispatcher(
   debugBuild: Boolean = false,
   motionActivityAvailable: Boolean = false,
   motionPedometerAvailable: Boolean = false,
+  healthSleepAvailable: Boolean = false,
   mobileUiAvailable: Boolean = false,
   talkHandler: TalkHandler = InvokeDispatcherFakeTalkHandler(),
   smsSearchPossible: () -> Boolean = { smsFeatureEnabled && smsTelephonyAvailable },
@@ -356,6 +357,7 @@ internal fun newInvokeDispatcher(
     contactsHandler = ContactsHandler(appContext, InvokeDispatcherFakeContactsDataSource()),
     calendarHandler = CalendarHandler(appContext, InvokeDispatcherFakeCalendarDataSource()),
     motionHandler = MotionHandler(appContext, InvokeDispatcherFakeMotionDataSource()),
+    healthHandler = HealthHandler.forTesting(appContext, SystemHealthDataSource),
     smsHandler = SmsHandler(SmsManager(appContext)),
     debugHandler = DebugHandler(appContext, testDeviceIdentityStore(appContext)),
     callLogHandler = CallLogHandler.forTesting(appContext, InvokeDispatcherFakeCallLogDataSource()),
@@ -372,6 +374,7 @@ internal fun newInvokeDispatcher(
     debugBuild = { debugBuild },
     motionActivityAvailable = { motionActivityAvailable },
     motionPedometerAvailable = { motionPedometerAvailable },
+    healthSleepAvailable = { healthSleepAvailable },
     mobileUiAvailable = { mobileUiAvailable },
     voiceWakeAvailable = voiceWakeAvailable,
   )

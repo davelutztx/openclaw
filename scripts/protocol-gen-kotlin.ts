@@ -105,6 +105,7 @@ const androidEnums: EnumSpec[] = [
     ["Contacts", "contacts"],
     ["Calendar", "calendar"],
     ["Motion", "motion"],
+    ["Health", "health"],
     ["CallLog", "callLog"],
     ["VoiceWake", "voiceWake"],
     ["MobileUI", "mobileUI"],
@@ -149,6 +150,13 @@ const androidEnums: EnumSpec[] = [
   enumSpec("OpenClawMotionCommand", "motion.", [
     ["Activity", "activity"],
     ["Pedometer", "pedometer"],
+  ]),
+  enumSpec("OpenClawHealthCommand", "health.", [
+    ["Sleep", "sleep"],
+    ["HeartRate", "heartRate"],
+    ["Steps", "steps"],
+    ["Weight", "weight"],
+    ["OxygenSaturation", "oxygenSaturation"],
   ]),
   enumSpec("OpenClawCallLogCommand", "callLog.", [["Search", "search"]]),
   enumSpec("OpenClawMobileUiCommand", "mobile.ui.", [

@@ -938,6 +938,7 @@ Available families:
 - `reminders.list` — iOS, Android (read-only default); `reminders.add` is dangerous and needs `gateway.nodes.commands.allow`.
 - `callLog.search` — Android only.
 - `motion.activity`, `motion.pedometer` — iOS, Android; capability-gated by available sensors.
+- `health.sleep`, `health.heartRate`, `health.steps`, `health.weight`, `health.oxygenSaturation` — Android only; read-only and gated by Health Connect availability and explicit grants.
 
 Example invokes:
 
@@ -947,6 +948,8 @@ openclaw nodes invoke --node <idOrNameOrIp> --command device.apps --params '{"li
 openclaw nodes invoke --node <idOrNameOrIp> --command notifications.list --params '{}'
 openclaw nodes invoke --node <idOrNameOrIp> --command photos.latest --params '{"limit":1}'
 ```
+
+Health commands accept optional `startISO`, `endISO`, and `limit` parameters. `health.sleep` includes stage segments when Health Connect provides them; the other commands return heart-rate samples, step records, weight records, or oxygen-saturation samples.
 
 ## System commands (node host / mac node)
 

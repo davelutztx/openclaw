@@ -1030,6 +1030,11 @@ describe("resolveNodeCommandAllowlist", () => {
       "device.health",
       "device.apps",
       "callLog.search",
+      "health.sleep",
+      "health.heartRate",
+      "health.steps",
+      "health.weight",
+      "health.oxygenSaturation",
       "system.notify",
     ]);
     expectDenied(allow, ["sms.search"]);

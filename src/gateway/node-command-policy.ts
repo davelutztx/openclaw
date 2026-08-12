@@ -58,6 +58,14 @@ const REMINDERS_DANGEROUS_COMMANDS = ["reminders.add"];
 
 const PHOTOS_COMMANDS = ["photos.latest"];
 
+const HEALTH_COMMANDS = [
+  "health.sleep",
+  "health.heartRate",
+  "health.steps",
+  "health.weight",
+  "health.oxygenSaturation",
+];
+
 const MOTION_COMMANDS = ["motion.activity", "motion.pedometer"];
 
 const HEALTH_DANGEROUS_COMMANDS = ["health.summary"];
@@ -139,6 +147,7 @@ export const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...CALL_LOG_COMMANDS,
     ...REMINDERS_COMMANDS,
     ...PHOTOS_COMMANDS,
+    ...HEALTH_COMMANDS,
     ...MOTION_COMMANDS,
     ...MOBILE_UI_COMMANDS,
   ],

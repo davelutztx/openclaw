@@ -7,6 +7,7 @@ import ai.openclaw.app.protocol.OpenClawCameraCommand
 import ai.openclaw.app.protocol.OpenClawCapability
 import ai.openclaw.app.protocol.OpenClawContactsCommand
 import ai.openclaw.app.protocol.OpenClawDeviceCommand
+import ai.openclaw.app.protocol.OpenClawHealthCommand
 import ai.openclaw.app.protocol.OpenClawLocationCommand
 import ai.openclaw.app.protocol.OpenClawMobileUiCommand
 import ai.openclaw.app.protocol.OpenClawMotionCommand
@@ -28,6 +29,7 @@ class InvokeDispatcher(
   contactsHandler: ContactsHandler,
   calendarHandler: CalendarHandler,
   motionHandler: MotionHandler,
+  healthHandler: HealthHandler,
   smsHandler: SmsHandler,
   debugHandler: DebugHandler,
   callLogHandler: CallLogHandler,
@@ -44,6 +46,7 @@ class InvokeDispatcher(
   debugBuild: () -> Boolean,
   motionActivityAvailable: () -> Boolean,
   motionPedometerAvailable: () -> Boolean,
+  healthSleepAvailable: () -> Boolean,
   mobileUiAvailable: () -> Boolean,
   private val voiceWakeAvailable: () -> Boolean,
 ) {
@@ -68,13 +71,17 @@ class InvokeDispatcher(
     CommandGate(motionActivityAvailable, unavailable("MOTION_UNAVAILABLE", "accelerometer not available"))
   private val motionPedometerGate =
     CommandGate(motionPedometerAvailable, unavailable("PEDOMETER_UNAVAILABLE", "step counter not available"))
+  private val healthGate =
+    CommandGate(
+      healthSleepAvailable,
+      unavailable("HEALTH_CONNECT_UNAVAILABLE", "Health Connect data is not available on this device"),
+    )
   private val smsUnavailable = unavailable("SMS_UNAVAILABLE", "SMS not available on this device")
   private val smsSendGate = CommandGate(sendSmsAvailable, smsUnavailable)
   private val smsSearchGate =
     CommandGate(
       isAvailable = { readSmsAvailable() || smsSearchPossible() },
       unavailable = smsUnavailable,
-      // Search is advertised before READ_SMS is granted so its handler can request permission.
       isAdvertised = smsSearchPossible,
     )
   private val callLogGate =
@@ -83,12 +90,10 @@ class InvokeDispatcher(
     CommandGate(photosAvailable, unavailable("PHOTOS_UNAVAILABLE", "photos not available on this build"))
   private val installedAppsGate =
     CommandGate(installedAppsSharingEnabled, unavailable("INSTALLED_APPS_SHARING_DISABLED", "enable Installed Apps in Settings"))
-  private val debugGate =
-    CommandGate(debugBuild, unavailable("INVALID_REQUEST", "unknown command"))
+  private val debugGate = CommandGate(debugBuild, unavailable("INVALID_REQUEST", "unknown command"))
   private val mobileUiGate =
     CommandGate(mobileUiAvailable, unavailable("MOBILE_UI_UNAVAILABLE", "accessibility service is not connected"))
 
-  // Keep protocol ordering stable. The same entries advertise and dispatch each bound handler.
   private val commands =
     listOf(
       Command(OpenClawSystemCommand.Notify.rawValue, systemHandler::handleSystemNotify),
@@ -114,6 +119,11 @@ class InvokeDispatcher(
       Command(OpenClawCalendarCommand.Add.rawValue, calendarHandler::handleCalendarAdd),
       Command(OpenClawMotionCommand.Activity.rawValue, motionHandler::handleMotionActivity, motionActivityGate),
       Command(OpenClawMotionCommand.Pedometer.rawValue, motionHandler::handleMotionPedometer, motionPedometerGate),
+      Command(OpenClawHealthCommand.Sleep.rawValue, healthHandler::handleHealthSleep, healthGate),
+      Command(OpenClawHealthCommand.HeartRate.rawValue, healthHandler::handleHealthHeartRate, healthGate),
+      Command(OpenClawHealthCommand.Steps.rawValue, healthHandler::handleHealthSteps, healthGate),
+      Command(OpenClawHealthCommand.Weight.rawValue, healthHandler::handleHealthWeight, healthGate),
+      Command(OpenClawHealthCommand.OxygenSaturation.rawValue, healthHandler::handleHealthOxygenSaturation, healthGate),
       Command(OpenClawSmsCommand.Send.rawValue, smsHandler::handleSmsSend, smsSendGate),
       Command(OpenClawSmsCommand.Search.rawValue, smsHandler::handleSmsSearch, smsSearchGate),
       Command(OpenClawCallLogCommand.Search.rawValue, callLogHandler::handleCallLogSearch, callLogGate),
@@ -124,10 +134,7 @@ class InvokeDispatcher(
     )
   private val commandsByName = commands.associateBy(Command::name)
 
-  suspend fun handleInvoke(
-    command: String,
-    paramsJson: String?,
-  ): GatewaySession.InvokeResult {
+  suspend fun handleInvoke(command: String, paramsJson: String?): GatewaySession.InvokeResult {
     val binding = commandsByName[command] ?: return unavailable("INVALID_REQUEST", "unknown command")
     if (binding.requiresForeground && !isForeground()) {
       return unavailable("NODE_BACKGROUND_UNAVAILABLE", "command requires foreground")
@@ -138,7 +145,6 @@ class InvokeDispatcher(
   }
 
   fun buildInvokeCommands(): List<String> {
-    // A settings change must not split a command family within one connect payload.
     val availability = mutableMapOf<CommandGate, Boolean>()
     return commands
       .filter { command ->
@@ -153,7 +159,6 @@ class InvokeDispatcher(
       add(OpenClawCapability.Notifications.rawValue)
       add(OpenClawCapability.System.rawValue)
       if (cameraGate.isAvailable()) add(OpenClawCapability.Camera.rawValue)
-      // A promptable search alone does not advertise the SMS capability.
       if (smsSendGate.isAvailable() || readSmsAvailable()) add(OpenClawCapability.Sms.rawValue)
       add(OpenClawCapability.Talk.rawValue)
       if (locationGate.isAvailable()) add(OpenClawCapability.Location.rawValue)
@@ -161,28 +166,19 @@ class InvokeDispatcher(
       add(OpenClawCapability.Contacts.rawValue)
       add(OpenClawCapability.Calendar.rawValue)
       if (motionActivityGate.isAvailable() || motionPedometerGate.isAvailable()) add(OpenClawCapability.Motion.rawValue)
+      if (healthGate.isAvailable()) add(OpenClawCapability.Health.rawValue)
       if (callLogGate.isAvailable()) add(OpenClawCapability.CallLog.rawValue)
       if (voiceWakeAvailable()) add(OpenClawCapability.VoiceWake.rawValue)
       if (mobileUiGate.isAvailable()) add(OpenClawCapability.MobileUI.rawValue)
     }
 
-  private fun unavailable(
-    code: String,
-    message: String,
-  ): GatewaySession.InvokeResult = GatewaySession.InvokeResult.error(code, "$code: $message")
+  private fun unavailable(code: String, message: String): GatewaySession.InvokeResult =
+    GatewaySession.InvokeResult.error(code, "$code: $message")
 }
 
-/** Talk-mode command adapter implemented by the voice subsystem. */
 interface TalkHandler {
-  /** Starts a push-to-talk capture session and keeps it open until stop or cancel. */
   suspend fun handlePttStart(paramsJson: String?): GatewaySession.InvokeResult
-
-  /** Finishes the active push-to-talk capture and submits recognized speech. */
   suspend fun handlePttStop(paramsJson: String?): GatewaySession.InvokeResult
-
-  /** Aborts the active push-to-talk capture without submitting speech. */
   suspend fun handlePttCancel(paramsJson: String?): GatewaySession.InvokeResult
-
-  /** Runs a bounded one-shot push-to-talk capture. */
   suspend fun handlePttOnce(paramsJson: String?): GatewaySession.InvokeResult
 }

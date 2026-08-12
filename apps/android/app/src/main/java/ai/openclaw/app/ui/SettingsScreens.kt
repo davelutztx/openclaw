@@ -43,6 +43,8 @@ import ai.openclaw.app.isReady
 import ai.openclaw.app.loadAndroidLicenseNotices
 import ai.openclaw.app.locationModeAfterBackgroundSettings
 import ai.openclaw.app.node.DeviceNotificationListenerService
+import ai.openclaw.app.node.HealthConnectRequestedPermissions
+import ai.openclaw.app.node.HealthHandler
 import ai.openclaw.app.photoReadPermissionsForRequest
 import ai.openclaw.app.reconcileRestoredAction
 import ai.openclaw.app.setAppLanguage
@@ -171,6 +173,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -1346,9 +1349,14 @@ private fun PhoneCapabilitiesScreen(
   val preventSleep by viewModel.preventSleep.collectAsState()
   val installedAppsSharingEnabled by viewModel.installedAppsSharingEnabled.collectAsState()
   val photosAvailable = remember { SensitiveFeatureConfig.photosEnabled }
+  val healthAvailable = remember(context) { HealthHandler.isCapabilityAvailable(context) }
   val backgroundLocationAvailable = remember { SensitiveFeatureConfig.backgroundLocationEnabled }
   val photoPermissions = remember { photoReadPermissionsForRequest() }
   var photosGranted by remember { mutableStateOf(photosAvailable && hasPhotoReadPermission(context)) }
+  var healthPermissionGranted by remember { mutableStateOf(false) }
+  LaunchedEffect(context, healthAvailable) {
+    healthPermissionGranted = healthAvailable && HealthHandler.hasRequestedPermissions(context)
+  }
   var pendingLocationModeRaw by rememberSaveable { mutableStateOf<String?>(null) }
   var pendingAlwaysPreviousModeRaw by rememberSaveable { mutableStateOf<String?>(null) }
   var awaitingBackgroundSettings by rememberSaveable { mutableStateOf(false) }
@@ -1403,6 +1411,11 @@ private fun PhoneCapabilitiesScreen(
   val photoPermissionLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
       photosGranted = photosAvailable && hasPhotoReadPermission(context)
+    }
+  val healthPermissionLauncher =
+    rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
+      healthPermissionGranted = granted.containsAll(HealthConnectRequestedPermissions.all)
+      viewModel.refreshNodePermissionSurface()
     }
 
   DisposableEffect(
@@ -1565,6 +1578,29 @@ private fun PhoneCapabilitiesScreen(
           SettingsToggleRow(nativeString("Keep Awake"), nativeString("Keep the node available during active work."), Icons.Default.Bolt, preventSleep, viewModel::setPreventSleep),
         ),
     )
+    if (healthAvailable) {
+      ClawPanel {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(text = nativeString("Health Connect"), style = ClawTheme.type.section, color = ClawTheme.colors.text)
+          Text(
+            text = nativeString("Read sleep, heart rate, steps, weight, and oxygen saturation."),
+            style = ClawTheme.type.body,
+            color = ClawTheme.colors.textMuted,
+          )
+          ClawSecondaryButton(
+            text = if (healthPermissionGranted) nativeString("Manage") else nativeString("Grant"),
+            onClick = {
+              if (healthPermissionGranted) {
+                openAppPermissionSettings(context)
+              } else {
+                healthPermissionLauncher.launch(HealthConnectRequestedPermissions.all)
+              }
+            },
+            modifier = Modifier.fillMaxWidth(),
+          )
+        }
+      }
+    }
     if (SensitiveFeatureConfig.accessibilityControlEnabled) {
       FlavorPhoneCapabilitiesSettings(viewModel)
     }

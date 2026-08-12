@@ -351,6 +351,8 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   ksp(libs.androidx.room.compiler)
   implementation(libs.androidx.exifinterface)
+  implementation(libs.androidx.health.connect.client)
+  implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.okhttp)
   implementation(libs.media3.datasource.okhttp)
   implementation(libs.media3.exoplayer)

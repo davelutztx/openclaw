@@ -326,6 +326,13 @@ Policy links:
 - [Google Play sensitive permissions policy hub](https://support.google.com/googleplay/android-developer/answer/16558241)
 - [Android default handlers guide](https://developer.android.com/guide/topics/permissions/default-handlers)
 
+Health Connect note:
+
+- Health Connect permissions are used only for read-only `health.*` node commands.
+- Current read permissions: Sleep, Heart rate, Steps, Weight, and Oxygen saturation.
+- The commands are advertised only when Health Connect is available; the user must grant OpenClaw the matching Health Connect read permissions in the Android app before data can be queried.
+- `health.sleep`, `health.heartRate`, `health.steps`, `health.weight`, and `health.oxygenSaturation` do not write Health Connect data and do not read workouts, calories, distance, body fat, or other record types.
+
 Other Play-restricted surfaces to watch if added later:
 
 - `ACCESS_BACKGROUND_LOCATION`

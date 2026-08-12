@@ -78,6 +78,7 @@ import ai.openclaw.app.node.ContactsHandler
 import ai.openclaw.app.node.DebugHandler
 import ai.openclaw.app.node.DeviceHandler
 import ai.openclaw.app.node.DeviceNotificationListenerService
+import ai.openclaw.app.node.HealthHandler
 import ai.openclaw.app.node.InvokeDispatcher
 import ai.openclaw.app.node.LocationCaptureManager
 import ai.openclaw.app.node.LocationHandler
@@ -1189,6 +1190,11 @@ class NodeRuntime private constructor(
       appContext = appContext,
     )
 
+  private val healthHandler: HealthHandler =
+    HealthHandler(
+      appContext = appContext,
+    )
+
   private val smsHandlerImpl: SmsHandler =
     SmsHandler(
       sms = sms,
@@ -1218,6 +1224,7 @@ class NodeRuntime private constructor(
       contactsHandler = contactsHandler,
       calendarHandler = calendarHandler,
       motionHandler = motionHandler,
+      healthHandler = healthHandler,
       smsHandler = smsHandlerImpl,
       debugHandler = debugHandler,
       callLogHandler = callLogHandler,
@@ -1234,6 +1241,7 @@ class NodeRuntime private constructor(
       debugBuild = { BuildConfig.DEBUG },
       motionActivityAvailable = { motionHandler.isActivityAvailable() },
       motionPedometerAvailable = { motionHandler.isPedometerAvailable() },
+      healthSleepAvailable = { healthHandler.isSleepAvailable() },
       mobileUiAvailable = {
         SensitiveFeatureConfig.accessibilityControlEnabled && mobileUiHandler.isConnected.value
       },
