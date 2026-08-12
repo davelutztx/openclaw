@@ -3,6 +3,7 @@ import { resolvePluginConfigObject } from "openclaw/plugin-sdk/plugin-config-run
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { buildProviderToolCompatFamilyHooks } from "openclaw/plugin-sdk/provider-tools";
 import { buildOpenAIImageGenerationProvider } from "./image-generation-provider.js";
+import { buildLocalWhisperRealtimeTranscriptionProvider } from "./local-whisper-transcription-provider.js";
 import { openaiMediaUnderstandingProvider } from "./media-understanding-provider.js";
 import { openAiMemoryEmbeddingProviderAdapter } from "./memory-embedding-adapter.js";
 import { buildOpenAIProvider } from "./openai-provider.js";
@@ -44,6 +45,7 @@ export default definePluginEntry({
     api.registerProvider(buildProviderWithPromptContribution(buildOpenAIProvider()));
     api.registerMemoryEmbeddingProvider(openAiMemoryEmbeddingProviderAdapter);
     api.registerImageGenerationProvider(buildOpenAIImageGenerationProvider());
+    api.registerRealtimeTranscriptionProvider(buildLocalWhisperRealtimeTranscriptionProvider());
     api.registerRealtimeTranscriptionProvider(buildOpenAIRealtimeTranscriptionProvider());
     api.registerRealtimeVoiceProvider(buildOpenAIRealtimeVoiceProvider());
     api.registerSpeechProvider(buildOpenAISpeechProvider());

@@ -139,7 +139,7 @@ describe("talk transcription gateway relay", () => {
       connId: "conn-1",
       audioBase64: Buffer.from("audio-in").toString("base64"),
     });
-    stopTalkTranscriptionRelaySession({
+    await stopTalkTranscriptionRelaySession({
       transcriptionSessionId: session.transcriptionSessionId,
       connId: "conn-1",
     });
@@ -278,6 +278,58 @@ describe("talk transcription gateway relay", () => {
       transcriptionSessionId: session.transcriptionSessionId,
       type: "close",
       reason: "completed",
+    });
+  });
+
+  it("finishes batch transcription before closing", async () => {
+    const finish = vi.fn(async () => {});
+    const sttSession = {
+      ...createSttSessionMock(),
+      finish,
+    };
+    const { events, session } = await createStartedRelaySession(sttSession, {});
+
+    sendTalkTranscriptionRelayAudio({
+      transcriptionSessionId: session.transcriptionSessionId,
+      connId: "conn-1",
+      audioBase64: Buffer.from("audio-in").toString("base64"),
+    });
+    await stopTalkTranscriptionRelaySession({
+      transcriptionSessionId: session.transcriptionSessionId,
+      connId: "conn-1",
+    });
+
+    expect(finish).toHaveBeenCalledOnce();
+    expect(sttSession.close).toHaveBeenCalledOnce();
+    const closePayload = findPayloadByType(events, "close");
+    expectRecordFields(closePayload, "close payload", {
+      transcriptionSessionId: session.transcriptionSessionId,
+      reason: "completed",
+    });
+  });
+
+  it("closes with error when batch transcription finish fails", async () => {
+    const finish = vi.fn(async () => {
+      throw new Error("transcribe failed");
+    });
+    const sttSession = {
+      ...createSttSessionMock(),
+      finish,
+    };
+    const { events, session } = await createStartedRelaySession(sttSession, {});
+
+    await expect(
+      stopTalkTranscriptionRelaySession({
+        transcriptionSessionId: session.transcriptionSessionId,
+        connId: "conn-1",
+      }),
+    ).rejects.toThrow("transcribe failed");
+
+    expect(sttSession.close).toHaveBeenCalledOnce();
+    const closePayload = findPayloadByType(events, "close");
+    expectRecordFields(closePayload, "close payload", {
+      transcriptionSessionId: session.transcriptionSessionId,
+      reason: "error",
     });
   });
 });

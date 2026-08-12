@@ -697,10 +697,15 @@ export const talkSessionHandlers: GatewayRequestHandlers = {
         stopTalkRealtimeRelaySession({ relaySessionId: session.relaySessionId, connId });
       } else if (session.kind === "transcription-relay") {
         const connId = requireUnifiedTalkSessionConn(session, client?.connId);
-        stopTalkTranscriptionRelaySession({
-          transcriptionSessionId: session.transcriptionSessionId,
-          connId,
-        });
+        try {
+          await stopTalkTranscriptionRelaySession({
+            transcriptionSessionId: session.transcriptionSessionId,
+            connId,
+          });
+        } catch (err) {
+          forgetUnifiedTalkSession(params.sessionId);
+          throw err;
+        }
       } else {
         if (!canCloseManagedRoomSession(session, client?.connId)) {
           respond(false, undefined, managedRoomOwnershipError("close"));

@@ -16,7 +16,6 @@ import {
 import { normalizeResolvedSecretInputString } from "openclaw/plugin-sdk/secret-input";
 import {
   asFiniteNumber,
-  createOpenAIRealtimeTranscriptionClientSecret,
   readRealtimeErrorDetail,
   resolveOpenAIProviderConfigRecord,
   trimToUndefined,
@@ -48,31 +47,28 @@ type RealtimeEvent = {
   error?: unknown;
 };
 
-type OpenAIRealtimeTranscriptionSessionPayload = {
-  type: "transcription";
-  audio: {
-    input: {
-      format: { type: "audio/pcmu" };
-      transcription: {
-        model: string;
-        language?: string;
-        prompt?: string;
-      };
-      turn_detection: {
-        type: "server_vad";
-        threshold: number;
-        prefix_padding_ms: number;
-        silence_duration_ms: number;
-      };
-    };
+type OpenAIRealtimeTranscriptionSessionUpdatePayload = {
+  input_audio_format: "g711_ulaw";
+  input_audio_transcription: {
+    model: string;
+    language?: string;
+    prompt?: string;
   };
+  turn_detection?: {
+    type: "server_vad";
+    threshold: number;
+    prefix_padding_ms: number;
+    silence_duration_ms: number;
+  } | null;
 };
 
 const OPENAI_REALTIME_TRANSCRIPTION_URL = "wss://api.openai.com/v1/realtime?intent=transcription";
 const OPENAI_REALTIME_TRANSCRIPTION_CONNECT_TIMEOUT_MS = 10_000;
 const OPENAI_REALTIME_TRANSCRIPTION_MAX_RECONNECT_ATTEMPTS = 5;
 const OPENAI_REALTIME_TRANSCRIPTION_RECONNECT_DELAY_MS = 1000;
-const OPENAI_REALTIME_TRANSCRIPTION_DEFAULT_MODEL = "gpt-4o-transcribe";
+const OPENAI_REALTIME_TRANSCRIPTION_DEFAULT_MODEL = "gpt-realtime-whisper";
+const OPENAI_REALTIME_TRANSCRIPTION_PLATFORM_API_KEY_REQUIRED =
+  "OpenAI Realtime transcription requires an OpenAI Platform API key";
 
 function normalizeProviderConfig(
   config: RealtimeTranscriptionProviderConfig,
@@ -112,27 +108,27 @@ function normalizeVadThreshold(value: unknown): number | undefined {
   return number;
 }
 
-function buildOpenAIRealtimeTranscriptionSessionPayload(
+function buildOpenAIRealtimeTranscriptionSessionUpdatePayload(
   config: OpenAIRealtimeTranscriptionSessionConfig,
-): OpenAIRealtimeTranscriptionSessionPayload {
+): OpenAIRealtimeTranscriptionSessionUpdatePayload {
+  const useStreamingWhisper = config.model === "gpt-realtime-whisper";
   return {
-    type: "transcription",
-    audio: {
-      input: {
-        format: { type: "audio/pcmu" },
-        transcription: {
-          model: config.model,
-          ...(config.language ? { language: config.language } : {}),
-          ...(config.prompt ? { prompt: config.prompt } : {}),
-        },
-        turn_detection: {
-          type: "server_vad",
-          threshold: config.vadThreshold,
-          prefix_padding_ms: 300,
-          silence_duration_ms: config.silenceDurationMs,
-        },
-      },
+    input_audio_format: "g711_ulaw",
+    input_audio_transcription: {
+      model: config.model,
+      ...(config.language ? { language: config.language } : {}),
+      ...(config.prompt ? { prompt: config.prompt } : {}),
     },
+    ...(useStreamingWhisper
+      ? { turn_detection: null }
+      : {
+          turn_detection: {
+            type: "server_vad",
+            threshold: config.vadThreshold,
+            prefix_padding_ms: 300,
+            silence_duration_ms: config.silenceDurationMs,
+          },
+        }),
   };
 }
 
@@ -143,19 +139,15 @@ async function resolveOpenAIRealtimeTranscriptionAuthorization(
   if (apiKey) {
     return apiKey;
   }
-  const authToken = await resolveProviderAuthProfileApiKey({
+  const profileApiKey = await resolveProviderAuthProfileApiKey({
     provider: "openai",
     cfg: config.cfg,
+    profileTypes: ["api_key"],
   });
-  if (!authToken) {
-    throw new Error("OpenAI API key or Codex OAuth missing");
+  if (profileApiKey) {
+    return profileApiKey;
   }
-  const clientSecret = await createOpenAIRealtimeTranscriptionClientSecret({
-    authToken,
-    auditContext: "openai-realtime-transcription-session",
-    session: buildOpenAIRealtimeTranscriptionSessionPayload(config),
-  });
-  return clientSecret.value;
+  throw new Error(OPENAI_REALTIME_TRANSCRIPTION_PLATFORM_API_KEY_REQUIRED);
 }
 
 function createOpenAIRealtimeTranscriptionSession(
@@ -240,8 +232,8 @@ function createOpenAIRealtimeTranscriptionSession(
     },
     onOpen: (transport: RealtimeTranscriptionWebSocketTransport) => {
       transport.sendJson({
-        type: "session.update",
-        session: buildOpenAIRealtimeTranscriptionSessionPayload(config),
+        type: "transcription_session.update",
+        session: buildOpenAIRealtimeTranscriptionSessionUpdatePayload(config),
       });
     },
     onMessage: handleEvent,
@@ -260,7 +252,7 @@ export function buildOpenAIRealtimeTranscriptionProvider(): RealtimeTranscriptio
       Boolean(
         normalizeProviderConfig(providerConfig).apiKey ||
         process.env.OPENAI_API_KEY ||
-        isProviderAuthProfileConfigured({ provider: "openai", cfg }),
+        isProviderAuthProfileConfigured({ provider: "openai", cfg, profileTypes: ["api_key"] }),
       ),
     createSession: (req) => {
       const config = normalizeProviderConfig(req.providerConfig);

@@ -698,10 +698,10 @@ Legacy `plugins.entries.openai.config.personality` is still read as a compatibil
     | Prompt | `...openai.prompt` | (unset) |
     | Silence duration | `...openai.silenceDurationMs` | `800` |
     | VAD threshold | `...openai.vadThreshold` | `0.5` |
-    | Auth | `...openai.apiKey`, `OPENAI_API_KEY`, or `openai` OAuth | API keys connect directly; OAuth mints a Realtime transcription client secret |
+    | Auth | `...openai.apiKey`, `OPENAI_API_KEY`, or an `openai` API-key auth profile | Gateway relay transcription requires an OpenAI Platform API key |
 
     <Note>
-    Uses a WebSocket connection to `wss://api.openai.com/v1/realtime` with G.711 u-law (`g711_ulaw` / `audio/pcmu`) audio. When only `openai` OAuth is configured, the Gateway mints an ephemeral Realtime transcription client secret before opening the WebSocket. This streaming provider is for Voice Call's realtime transcription path; Discord voice currently records short segments and uses the batch `tools.media.audio` transcription path instead.
+    Uses a WebSocket connection to `wss://api.openai.com/v1/realtime?intent=transcription` with G.711 u-law (`g711_ulaw` / `audio/pcmu`) audio. Because this is a server-side Gateway relay WebSocket, Codex/OpenAI OAuth alone is not enough; configure an OpenAI Platform API key for this provider. This streaming provider is for Voice Call's realtime transcription path; Discord voice currently records short segments and uses the batch `tools.media.audio` transcription path instead.
     </Note>
 
   </Accordion>

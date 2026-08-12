@@ -35,6 +35,7 @@ export type RealtimeTranscriptionSessionCreateRequest = RealtimeTranscriptionSes
 export type RealtimeTranscriptionSession = {
   connect(): Promise<void>;
   sendAudio(audio: Buffer): void;
+  finish?(): Promise<void>;
   close(): void;
   isConnected(): boolean;
 };

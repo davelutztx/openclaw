@@ -297,6 +297,9 @@ export function createTalkTranscriptionRelaySession(
       }
     },
     onError: (error) => {
+      console.warn(
+        `[talk-transcription-relay] provider error sessionId=${transcriptionSessionId} provider=${params.provider.id}: ${error.message}`,
+      );
       emit(
         { transcriptionSessionId, type: "error", message: error.message },
         {
@@ -336,15 +339,19 @@ export function createTalkTranscriptionRelaySession(
       emit({ transcriptionSessionId, type: "ready" }, { type: "session.ready", payload: null });
     })
     .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[talk-transcription-relay] provider connect failed sessionId=${transcriptionSessionId} provider=${params.provider.id}: ${message}`,
+      );
       emit(
         {
           transcriptionSessionId,
           type: "error",
-          message: error instanceof Error ? error.message : String(error),
+          message,
         },
         {
           type: "session.error",
-          payload: { message: error instanceof Error ? error.message : String(error) },
+          payload: { message },
           final: true,
         },
       );
@@ -406,10 +413,10 @@ export function sendTalkTranscriptionRelayAudio(params: {
 }
 
 /** Commits the current transcription turn and closes the relay. */
-export function stopTalkTranscriptionRelaySession(params: {
+export async function stopTalkTranscriptionRelaySession(params: {
   transcriptionSessionId: string;
   connId: string;
-}): void {
+}): Promise<void> {
   const session = getTranscriptionSession(params.transcriptionSessionId, params.connId);
   if (session.talk.activeTurnId) {
     broadcastToOwner(session.context, session.connId, {
@@ -425,7 +432,13 @@ export function stopTalkTranscriptionRelaySession(params: {
       }),
     });
   }
-  closeTranscriptionSession(session, "completed");
+  try {
+    await session.sttSession.finish?.();
+    closeTranscriptionSession(session, "completed");
+  } catch (error) {
+    closeTranscriptionSession(session, "error");
+    throw error;
+  }
 }
 
 /** Cancels the active transcription turn and closes the relay. */

@@ -97,14 +97,6 @@ async function waitForFakeSocket(): Promise<FakeWebSocketInstance> {
   return socket;
 }
 
-function mockCallArg(mock: { mock: { calls: unknown[][] } }, index = 0): Record<string, unknown> {
-  const call = mock.mock.calls[index];
-  if (!call) {
-    throw new Error(`expected mock call ${index}`);
-  }
-  return call[0] as Record<string, unknown>;
-}
-
 describe("buildOpenAIRealtimeTranscriptionProvider", () => {
   beforeEach(() => {
     FakeWebSocket.instances = [];
@@ -203,89 +195,57 @@ describe("buildOpenAIRealtimeTranscriptionProvider", () => {
     expect(provider.aliases).toContain("openai-realtime");
   });
 
-  it("treats a Codex OAuth profile as configured when no API key is present", () => {
+  it("does not treat a Codex OAuth profile as configured when no API key is present", () => {
     const provider = buildOpenAIRealtimeTranscriptionProvider();
     const cfg = { auth: { order: { openai: ["openai:default"] } } };
-    providerAuthMocks.isProviderAuthProfileConfigured.mockReturnValue(true);
+    providerAuthMocks.isProviderAuthProfileConfigured.mockReturnValue(false);
 
-    expect(provider.isConfigured({ cfg: cfg as never, providerConfig: {} })).toBe(true);
+    expect(provider.isConfigured({ cfg: cfg as never, providerConfig: {} })).toBe(false);
     expect(providerAuthMocks.isProviderAuthProfileConfigured).toHaveBeenCalledWith({
       provider: "openai",
       cfg,
+      profileTypes: ["api_key"],
     });
   });
 
-  it("mints a Codex OAuth client secret for realtime transcription sockets", async () => {
+  it("uses an OpenAI API-key profile for realtime transcription sockets", async () => {
     const provider = buildOpenAIRealtimeTranscriptionProvider();
-    const release = vi.fn();
-    providerAuthMocks.resolveProviderAuthProfileApiKey.mockResolvedValue("oauth-token");
-    ssrfMocks.fetchWithSsrFGuard.mockResolvedValue({
-      response: new Response(JSON.stringify({ value: "ek-test" }), { status: 200 }),
-      release,
-    });
+    providerAuthMocks.resolveProviderAuthProfileApiKey.mockResolvedValue("sk-profile");
     const cfg = { auth: { order: { openai: ["openai:default"] } } };
     const session = provider.createSession({
       cfg: cfg as never,
-      providerConfig: {},
+      providerConfig: {
+        model: "gpt-4o-transcribe",
+      },
     });
 
     const connecting = session.connect();
     const socket = await waitForFakeSocket();
 
-    expect(socket.headers?.Authorization).toBe("Bearer ek-test");
+    expect(socket.url).toBe("wss://api.openai.com/v1/realtime?intent=transcription");
+    expect(socket.headers?.Authorization).toBe("Bearer sk-profile");
     expect(providerAuthMocks.resolveProviderAuthProfileApiKey).toHaveBeenCalledWith({
       provider: "openai",
       cfg,
+      profileTypes: ["api_key"],
     });
-    const request = mockCallArg(ssrfMocks.fetchWithSsrFGuard);
-    expect(request.auditContext).toBe("openai-realtime-transcription-session");
-    expect(request.url).toBe("https://api.openai.com/v1/realtime/transcription_sessions");
-    const init = request.init as {
-      method?: string;
-      headers?: Record<string, string>;
-      body?: unknown;
-    };
-    expect(init.method).toBe("POST");
-    expect(init.headers?.Authorization).toBe("Bearer oauth-token");
-    expect(init.headers?.["Content-Type"]).toBe("application/json");
-    expect(typeof init.body).toBe("string");
-    expect(JSON.parse(init.body as string)).toEqual({
-      type: "transcription",
-      audio: {
-        input: {
-          format: { type: "audio/pcmu" },
-          transcription: { model: "gpt-4o-transcribe" },
-          turn_detection: {
-            type: "server_vad",
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 800,
-          },
-        },
-      },
-    });
+    expect(ssrfMocks.fetchWithSsrFGuard).not.toHaveBeenCalled();
 
     socket.readyState = FakeWebSocket.OPEN;
     socket.emit("open");
     socket.emit("message", Buffer.from(JSON.stringify({ type: "transcription_session.updated" })));
     await connecting;
 
-    expect(release).toHaveBeenCalled();
     expect(parseSent(socket)[0]).toEqual({
-      type: "session.update",
+      type: "transcription_session.update",
       session: {
-        type: "transcription",
-        audio: {
-          input: {
-            format: { type: "audio/pcmu" },
-            transcription: { model: "gpt-4o-transcribe" },
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 800,
-            },
-          },
+        input_audio_format: "g711_ulaw",
+        input_audio_transcription: { model: "gpt-4o-transcribe" },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 800,
         },
       },
     });
@@ -315,53 +275,43 @@ describe("buildOpenAIRealtimeTranscriptionProvider", () => {
     expect(session.isConnected()).toBe(false);
     expect(parseSent(socket)).toEqual([
       {
-        type: "session.update",
+        type: "transcription_session.update",
         session: {
-          type: "transcription",
-          audio: {
-            input: {
-              format: { type: "audio/pcmu" },
-              transcription: {
-                model: "gpt-4o-transcribe",
-                language: "en",
-                prompt: "expect OpenClaw product names",
-              },
-              turn_detection: {
-                type: "server_vad",
-                threshold: 0.45,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 900,
-              },
-            },
+          input_audio_format: "g711_ulaw",
+          input_audio_transcription: {
+            model: "gpt-4o-transcribe",
+            language: "en",
+            prompt: "expect OpenClaw product names",
+          },
+          turn_detection: {
+            type: "server_vad",
+            threshold: 0.45,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 900,
           },
         },
       },
     ]);
 
-    socket.emit("message", Buffer.from(JSON.stringify({ type: "session.updated" })));
+    socket.emit("message", Buffer.from(JSON.stringify({ type: "transcription_session.updated" })));
     await connecting;
 
     expect(session.isConnected()).toBe(true);
     expect(parseSent(socket)).toEqual([
       {
-        type: "session.update",
+        type: "transcription_session.update",
         session: {
-          type: "transcription",
-          audio: {
-            input: {
-              format: { type: "audio/pcmu" },
-              transcription: {
-                model: "gpt-4o-transcribe",
-                language: "en",
-                prompt: "expect OpenClaw product names",
-              },
-              turn_detection: {
-                type: "server_vad",
-                threshold: 0.45,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 900,
-              },
-            },
+          input_audio_format: "g711_ulaw",
+          input_audio_transcription: {
+            model: "gpt-4o-transcribe",
+            language: "en",
+            prompt: "expect OpenClaw product names",
+          },
+          turn_detection: {
+            type: "server_vad",
+            threshold: 0.45,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 900,
           },
         },
       },
