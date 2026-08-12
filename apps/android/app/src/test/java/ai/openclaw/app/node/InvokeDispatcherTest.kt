@@ -5,6 +5,7 @@ import ai.openclaw.app.gateway.GatewaySession
 import ai.openclaw.app.protocol.OpenClawCallLogCommand
 import ai.openclaw.app.protocol.OpenClawCameraCommand
 import ai.openclaw.app.protocol.OpenClawDeviceCommand
+import ai.openclaw.app.protocol.OpenClawHealthCommand
 import ai.openclaw.app.protocol.OpenClawLocationCommand
 import ai.openclaw.app.protocol.OpenClawMotionCommand
 import ai.openclaw.app.protocol.OpenClawPhotosCommand
@@ -256,6 +257,49 @@ class InvokeDispatcherTest {
       )
     }
 
+  @Test
+  fun handleInvoke_blocksHealthSleepWhenHealthConnectUnavailable() =
+    runTest {
+      val result = newDispatcher(healthSleepAvailable = false).handleInvoke(OpenClawHealthCommand.Sleep.rawValue, null)
+
+      assertEquals("HEALTH_CONNECT_UNAVAILABLE", result.error?.code)
+    }
+
+  @Test
+  fun handleInvoke_returnsHealthSleepPayloadWhenAvailable() =
+    runTest {
+      val result = newDispatcher(healthSleepAvailable = true).handleInvoke(OpenClawHealthCommand.Sleep.rawValue, null)
+
+      assertEquals(true, result.ok)
+      assertEquals(
+        "{\"sleep\":[{\"startISO\":\"2026-05-06T04:00:00Z\",\"endISO\":\"2026-05-06T12:00:00Z\",\"durationMinutes\":480,\"dataOriginPackage\":\"com.example.sleep\",\"stages\":[{\"startISO\":\"2026-05-06T04:00:00Z\",\"endISO\":\"2026-05-06T05:00:00Z\",\"stage\":\"deep\"}]}]}",
+        result.payloadJson,
+      )
+    }
+
+  @Test
+  fun handleInvoke_returnsRequestedHealthMetricPayloadsWhenAvailable() =
+    runTest {
+      val dispatcher = newDispatcher(healthSleepAvailable = true)
+
+      assertEquals(
+        "{\"heartRate\":[{\"timeISO\":\"2026-05-06T12:00:00Z\",\"beatsPerMinute\":62,\"dataOriginPackage\":\"com.example.health\"}]}",
+        dispatcher.handleInvoke(OpenClawHealthCommand.HeartRate.rawValue, null).payloadJson,
+      )
+      assertEquals(
+        "{\"totalCount\":1234,\"steps\":[{\"startISO\":\"2026-05-06T00:00:00Z\",\"endISO\":\"2026-05-06T12:00:00Z\",\"count\":1234,\"dataOriginPackage\":\"com.example.health\"}]}",
+        dispatcher.handleInvoke(OpenClawHealthCommand.Steps.rawValue, null).payloadJson,
+      )
+      assertEquals(
+        "{\"weight\":[{\"timeISO\":\"2026-05-06T12:00:00Z\",\"kilograms\":90.7,\"dataOriginPackage\":\"com.example.health\"}]}",
+        dispatcher.handleInvoke(OpenClawHealthCommand.Weight.rawValue, null).payloadJson,
+      )
+      assertEquals(
+        "{\"oxygenSaturation\":[{\"timeISO\":\"2026-05-06T12:00:00Z\",\"percentage\":97.5,\"dataOriginPackage\":\"com.example.health\"}]}",
+        dispatcher.handleInvoke(OpenClawHealthCommand.OxygenSaturation.rawValue, null).payloadJson,
+      )
+    }
+
   private fun newDispatcher(
     cameraEnabled: Boolean = false,
     locationEnabled: Boolean = false,
@@ -270,6 +314,7 @@ class InvokeDispatcherTest {
     motionActivityAvailable: Boolean = false,
     motionPedometerAvailable: Boolean = false,
     talkHandler: TalkHandler = InvokeDispatcherFakeTalkHandler(),
+    healthSleepAvailable: Boolean = false,
   ): InvokeDispatcher {
     val appContext = RuntimeEnvironment.getApplication()
     shadowOf(appContext.packageManager).setSystemFeature(PackageManager.FEATURE_TELEPHONY, smsTelephonyAvailable)
@@ -294,6 +339,7 @@ class InvokeDispatcherTest {
       contactsHandler = ContactsHandler.forTesting(appContext, InvokeDispatcherFakeContactsDataSource()),
       calendarHandler = CalendarHandler.forTesting(appContext, InvokeDispatcherFakeCalendarDataSource()),
       motionHandler = MotionHandler.forTesting(appContext, InvokeDispatcherFakeMotionDataSource()),
+      healthHandler = HealthHandler.forTesting(appContext, InvokeDispatcherFakeHealthDataSource()),
       smsHandler = SmsHandler(SmsManager(appContext)),
       a2uiHandler =
         A2UIHandler(
@@ -317,6 +363,7 @@ class InvokeDispatcherTest {
       onCanvasA2uiReset = {},
       motionActivityAvailable = { motionActivityAvailable },
       motionPedometerAvailable = { motionPedometerAvailable },
+      healthSleepAvailable = { healthSleepAvailable },
     )
   }
 
@@ -452,6 +499,86 @@ private class InvokeDispatcherFakeMotionDataSource : MotionDataSource {
   ): PedometerRecord {
     error("unused in InvokeDispatcherTest")
   }
+}
+
+private class InvokeDispatcherFakeHealthDataSource : HealthDataSource {
+  override fun isAvailable(context: Context): Boolean = true
+
+  override suspend fun hasSleepPermission(context: Context): Boolean = true
+
+  override suspend fun hasRequestedPermissions(context: Context): Boolean = true
+
+  override suspend fun sleep(
+    context: Context,
+    request: HealthSleepRequest,
+  ): List<HealthSleepSessionRecord> =
+    listOf(
+      HealthSleepSessionRecord(
+        startISO = "2026-05-06T04:00:00Z",
+        endISO = "2026-05-06T12:00:00Z",
+        durationMinutes = 480,
+        title = null,
+        notes = null,
+        dataOriginPackage = "com.example.sleep",
+        stages =
+          listOf(
+            HealthSleepStageRecord(
+              startISO = "2026-05-06T04:00:00Z",
+              endISO = "2026-05-06T05:00:00Z",
+              stage = "deep",
+            ),
+          ),
+      ),
+    )
+
+  override suspend fun heartRate(
+    context: Context,
+    request: HealthTimeRangeRequest,
+  ): List<HealthHeartRateSample> =
+    listOf(
+      HealthHeartRateSample(
+        timeISO = "2026-05-06T12:00:00Z",
+        beatsPerMinute = 62,
+        dataOriginPackage = "com.example.health",
+      ),
+    )
+
+  override suspend fun steps(
+    context: Context,
+    request: HealthTimeRangeRequest,
+  ): List<HealthStepsRecord> =
+    listOf(
+      HealthStepsRecord(
+        startISO = "2026-05-06T00:00:00Z",
+        endISO = "2026-05-06T12:00:00Z",
+        count = 1234,
+        dataOriginPackage = "com.example.health",
+      ),
+    )
+
+  override suspend fun weight(
+    context: Context,
+    request: HealthTimeRangeRequest,
+  ): List<HealthWeightRecord> =
+    listOf(
+      HealthWeightRecord(
+        timeISO = "2026-05-06T12:00:00Z",
+        kilograms = 90.7,
+        dataOriginPackage = "com.example.health",
+      ),
+    )
+
+  override suspend fun oxygenSaturation(
+    context: Context,
+    request: HealthTimeRangeRequest,
+  ): List<HealthOxygenSaturationRecord> =
+    listOf(
+      HealthOxygenSaturationRecord(
+        timeISO = "2026-05-06T12:00:00Z",
+        percentage = 97.5,
+        dataOriginPackage = "com.example.health",
+      ),
+    )
 }
 
 private class InvokeDispatcherFakeCallLogDataSource : CallLogDataSource {

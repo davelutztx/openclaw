@@ -8,6 +8,7 @@ import ai.openclaw.app.protocol.OpenClawCanvasCommand
 import ai.openclaw.app.protocol.OpenClawCapability
 import ai.openclaw.app.protocol.OpenClawContactsCommand
 import ai.openclaw.app.protocol.OpenClawDeviceCommand
+import ai.openclaw.app.protocol.OpenClawHealthCommand
 import ai.openclaw.app.protocol.OpenClawLocationCommand
 import ai.openclaw.app.protocol.OpenClawMotionCommand
 import ai.openclaw.app.protocol.OpenClawNotificationsCommand
@@ -29,6 +30,7 @@ data class NodeRuntimeFlags(
   val motionActivityAvailable: Boolean,
   val motionPedometerAvailable: Boolean,
   val installedAppsSharingEnabled: Boolean,
+  val healthSleepAvailable: Boolean,
   val debugBuild: Boolean,
 )
 
@@ -45,6 +47,7 @@ enum class InvokeCommandAvailability {
   MotionActivityAvailable,
   MotionPedometerAvailable,
   InstalledAppsSharingEnabled,
+  HealthSleepAvailable,
   DebugBuild,
 }
 
@@ -58,6 +61,7 @@ enum class NodeCapabilityAvailability {
   PhotosAvailable,
   VoiceWakeEnabled,
   MotionAvailable,
+  HealthAvailable,
 }
 
 /** Capability entry reported to the gateway when its availability gate passes. */
@@ -107,6 +111,10 @@ object InvokeCommandRegistry {
       NodeCapabilitySpec(
         name = OpenClawCapability.Motion.rawValue,
         availability = NodeCapabilityAvailability.MotionAvailable,
+      ),
+      NodeCapabilitySpec(
+        name = OpenClawCapability.Health.rawValue,
+        availability = NodeCapabilityAvailability.HealthAvailable,
       ),
       NodeCapabilitySpec(
         name = OpenClawCapability.CallLog.rawValue,
@@ -230,6 +238,26 @@ object InvokeCommandRegistry {
         availability = InvokeCommandAvailability.MotionPedometerAvailable,
       ),
       InvokeCommandSpec(
+        name = OpenClawHealthCommand.Sleep.rawValue,
+        availability = InvokeCommandAvailability.HealthSleepAvailable,
+      ),
+      InvokeCommandSpec(
+        name = OpenClawHealthCommand.HeartRate.rawValue,
+        availability = InvokeCommandAvailability.HealthSleepAvailable,
+      ),
+      InvokeCommandSpec(
+        name = OpenClawHealthCommand.Steps.rawValue,
+        availability = InvokeCommandAvailability.HealthSleepAvailable,
+      ),
+      InvokeCommandSpec(
+        name = OpenClawHealthCommand.Weight.rawValue,
+        availability = InvokeCommandAvailability.HealthSleepAvailable,
+      ),
+      InvokeCommandSpec(
+        name = OpenClawHealthCommand.OxygenSaturation.rawValue,
+        availability = InvokeCommandAvailability.HealthSleepAvailable,
+      ),
+      InvokeCommandSpec(
         name = OpenClawSmsCommand.Send.rawValue,
         availability = InvokeCommandAvailability.SendSmsAvailable,
       ),
@@ -269,6 +297,7 @@ object InvokeCommandRegistry {
           NodeCapabilityAvailability.PhotosAvailable -> flags.photosAvailable
           NodeCapabilityAvailability.VoiceWakeEnabled -> flags.voiceWakeEnabled
           NodeCapabilityAvailability.MotionAvailable -> flags.motionActivityAvailable || flags.motionPedometerAvailable
+          NodeCapabilityAvailability.HealthAvailable -> flags.healthSleepAvailable
         }
       }.map { it.name }
 
@@ -288,6 +317,7 @@ object InvokeCommandRegistry {
           InvokeCommandAvailability.MotionActivityAvailable -> flags.motionActivityAvailable
           InvokeCommandAvailability.MotionPedometerAvailable -> flags.motionPedometerAvailable
           InvokeCommandAvailability.InstalledAppsSharingEnabled -> flags.installedAppsSharingEnabled
+          InvokeCommandAvailability.HealthSleepAvailable -> flags.healthSleepAvailable
           InvokeCommandAvailability.DebugBuild -> flags.debugBuild
         }
       }.map { it.name }

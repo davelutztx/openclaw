@@ -1,6 +1,9 @@
 // Gateway node event dispatcher.
 // Handles device/node-originated events and routes them to sessions/channels.
 import { randomUUID } from "node:crypto";
+import { appendFile, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname } from "node:path";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
@@ -55,6 +58,7 @@ const EXEC_FINISHED_RUN_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const MAX_RECENT_EXEC_FINISHED_RUNS = 2000;
 const NODE_PRESENCE_PERSIST_MIN_INTERVAL_MS = 60_000;
 const MAX_RECENT_NODE_PRESENCE_KEYS = 1024;
+const MAX_HEALTH_SNAPSHOT_PAYLOAD_CHARS = 1_000_000;
 
 const recentVoiceTranscripts = new Map<string, { fingerprint: string; ts: number }>();
 const recentExecFinishedRuns = new Map<string, number>();
@@ -251,6 +255,36 @@ function compactNotificationEventText(raw: string) {
   return `${normalized.slice(0, safe)}…`;
 }
 
+function resolveHealthSnapshotLogPath(): string {
+  const configured = process.env.OPENCLAW_HEALTH_SNAPSHOT_LOG?.trim();
+  if (configured) {
+    return configured;
+  }
+  return `${homedir()}/.openclaw/workspace/skills/android-healthconnect/data/android-snapshots.jsonl`;
+}
+
+async function appendHealthSnapshotEvent(params: {
+  nodeId: string;
+  payload: Record<string, unknown>;
+}) {
+  const raw = JSON.stringify(params.payload);
+  if (raw.length > MAX_HEALTH_SNAPSHOT_PAYLOAD_CHARS) {
+    return false;
+  }
+  const path = resolveHealthSnapshotLogPath();
+  await mkdir(dirname(path), { recursive: true });
+  await appendFile(
+    path,
+    `${JSON.stringify({
+      receivedAt: new Date().toISOString(),
+      nodeId: params.nodeId,
+      payload: params.payload,
+    })}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  return true;
+}
+
 type LoadedSessionEntry = ReturnType<typeof loadSessionEntry>;
 
 async function touchSessionStore(params: {
@@ -383,6 +417,14 @@ export const handleNodeEvent = async (
   opts?: { connId?: string; deviceId?: string },
 ): Promise<NodeEventHandleResult | undefined> => {
   switch (evt.event) {
+    case "health.snapshot": {
+      const obj = parsePayloadObject(evt.payloadJSON);
+      if (!obj || obj.schema !== "health.snapshot.v1") {
+        return undefined;
+      }
+      const appended = await appendHealthSnapshotEvent({ nodeId, payload: obj });
+      return { ok: true, event: evt.event, handled: appended };
+    }
     case "voice.transcript": {
       const obj = parsePayloadObject(evt.payloadJSON);
       if (!obj) {

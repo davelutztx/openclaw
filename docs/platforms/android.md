@@ -229,6 +229,7 @@ See [Camera node](/nodes/camera) for parameters and CLI helpers.
   - `callLog.search`
   - `sms.search`
   - `motion.activity`, `motion.pedometer`
+  - `health.sleep`, `health.heartRate`, `health.steps`, `health.weight`, `health.oxygenSaturation` (read-only Health Connect data; requires explicit Health Connect read grants)
 
 ## Assistant entrypoints
 

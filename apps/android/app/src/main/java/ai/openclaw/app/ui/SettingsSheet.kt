@@ -6,6 +6,8 @@ import ai.openclaw.app.MainViewModel
 import ai.openclaw.app.NotificationPackageFilterMode
 import ai.openclaw.app.SensitiveFeatureConfig
 import ai.openclaw.app.node.DeviceNotificationListenerService
+import ai.openclaw.app.node.HealthConnectRequestedPermissions
+import ai.openclaw.app.node.HealthHandler
 import ai.openclaw.app.normalizeLocalHourMinute
 import android.Manifest
 import android.app.role.RoleManager
@@ -54,6 +56,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -221,6 +225,7 @@ fun SettingsSheet(viewModel: MainViewModel) {
     }
   val motionPermissionRequired = true
   val motionAvailable = remember(context) { hasMotionCapabilities(context) }
+  val healthAvailable = remember(context) { HealthHandler.isCapabilityAvailable(context) }
 
   var notificationsPermissionGranted by
     remember {
@@ -318,11 +323,20 @@ fun SettingsSheet(viewModel: MainViewModel) {
       motionPermissionGranted = granted
     }
 
+  var healthPermissionGranted by remember { mutableStateOf(false) }
+  LaunchedEffect(context, healthAvailable) {
+    healthPermissionGranted = healthAvailable && HealthHandler.hasRequestedPermissions(context)
+  }
+  val healthPermissionLauncher =
+    rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
+      healthPermissionGranted = granted.containsAll(HealthConnectRequestedPermissions.all)
+    }
+
   var smsPermissionGranted by
     remember {
       mutableStateOf(
         ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) ==
-          PackageManager.PERMISSION_GRANTED ||
+          PackageManager.PERMISSION_GRANTED &&
           ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
           PackageManager.PERMISSION_GRANTED,
       )
@@ -331,7 +345,7 @@ fun SettingsSheet(viewModel: MainViewModel) {
     rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
       smsPermissionGranted =
         ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) ==
-        PackageManager.PERMISSION_GRANTED ||
+        PackageManager.PERMISSION_GRANTED &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
         PackageManager.PERMISSION_GRANTED
       viewModel.refreshGatewayConnection()
@@ -380,7 +394,7 @@ fun SettingsSheet(viewModel: MainViewModel) {
             PackageManager.PERMISSION_GRANTED
           smsPermissionGranted =
             ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) ==
-            PackageManager.PERMISSION_GRANTED ||
+            PackageManager.PERMISSION_GRANTED &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
             PackageManager.PERMISSION_GRANTED
           assistantRoleAvailable = isAssistantRoleAvailable(context)
@@ -1125,6 +1139,38 @@ fun SettingsSheet(viewModel: MainViewModel) {
                   shape = RoundedCornerShape(14.dp),
                 ) {
                   Text(motionButtonLabel, style = mobileCallout.copy(fontWeight = FontWeight.Bold))
+                }
+              },
+            )
+          }
+          if (healthAvailable) {
+            HorizontalDivider(color = mobileBorder)
+            ListItem(
+              modifier = Modifier.fillMaxWidth(),
+              colors = listItemColors,
+              headlineContent = { Text("Health Connect", style = mobileHeadline) },
+              supportingContent = {
+                Text(
+                  "Read sleep, heart rate, steps, weight, and oxygen saturation.",
+                  style = mobileCallout,
+                )
+              },
+              trailingContent = {
+                Button(
+                  onClick = {
+                    if (healthPermissionGranted) {
+                      openAppSettings(context)
+                    } else {
+                      healthPermissionLauncher.launch(HealthConnectRequestedPermissions.all)
+                    }
+                  },
+                  colors = settingsPrimaryButtonColors(),
+                  shape = RoundedCornerShape(14.dp),
+                ) {
+                  Text(
+                    if (healthPermissionGranted) "Manage" else "Grant",
+                    style = mobileCallout.copy(fontWeight = FontWeight.Bold),
+                  )
                 }
               },
             )

@@ -398,6 +398,7 @@ Available families:
 - `callLog.search`
 - `sms.search`
 - `motion.activity`, `motion.pedometer`
+- `health.sleep`, `health.heartRate`, `health.steps`, `health.weight`, `health.oxygenSaturation`
 
 Example invokes:
 
@@ -412,6 +413,9 @@ Notes:
 
 - `device.apps` is opt-in and returns launcher-visible apps by default.
 - Motion commands are capability-gated by available sensors.
+- Health commands are read-only and require Health Connect availability plus explicit Android app Health Connect grants. They accept optional `startISO`, `endISO`, and `limit` params.
+- `health.sleep` returns sleep sessions with stage segments when Health Connect has them.
+- `health.heartRate`, `health.steps`, `health.weight`, and `health.oxygenSaturation` return the corresponding Health Connect records/samples.
 
 ## System commands (node host / mac node)
 

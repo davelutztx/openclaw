@@ -43,6 +43,14 @@ const REMINDERS_DANGEROUS_COMMANDS = ["reminders.add"];
 
 const PHOTOS_COMMANDS = ["photos.latest"];
 
+const HEALTH_COMMANDS = [
+  "health.sleep",
+  "health.heartRate",
+  "health.steps",
+  "health.weight",
+  "health.oxygenSaturation",
+];
+
 const MOTION_COMMANDS = ["motion.activity", "motion.pedometer"];
 
 const SMS_DANGEROUS_COMMANDS = ["sms.send", "sms.search"];
@@ -102,6 +110,7 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...CALL_LOG_COMMANDS,
     ...REMINDERS_COMMANDS,
     ...PHOTOS_COMMANDS,
+    ...HEALTH_COMMANDS,
     ...MOTION_COMMANDS,
   ],
   macos: [

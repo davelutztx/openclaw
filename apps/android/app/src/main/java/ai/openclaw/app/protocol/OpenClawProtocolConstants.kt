@@ -17,6 +17,7 @@ enum class OpenClawCapability(
   Contacts("contacts"),
   Calendar("calendar"),
   Motion("motion"),
+  Health("health"),
   CallLog("callLog"),
 }
 
@@ -193,6 +194,22 @@ enum class OpenClawMotionCommand(
 
   companion object {
     const val NamespacePrefix: String = "motion."
+  }
+}
+
+/** Health Connect command ids accepted by the Android node. */
+enum class OpenClawHealthCommand(
+  val rawValue: String,
+) {
+  Sleep("health.sleep"),
+  HeartRate("health.heartRate"),
+  Steps("health.steps"),
+  Weight("health.weight"),
+  OxygenSaturation("health.oxygenSaturation"),
+  ;
+
+  companion object {
+    const val NamespacePrefix: String = "health."
   }
 }
 

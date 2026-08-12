@@ -28,6 +28,7 @@ import ai.openclaw.app.node.DEFAULT_SEAM_COLOR_ARGB
 import ai.openclaw.app.node.DebugHandler
 import ai.openclaw.app.node.DeviceHandler
 import ai.openclaw.app.node.DeviceNotificationListenerService
+import ai.openclaw.app.node.HealthHandler
 import ai.openclaw.app.node.InvokeDispatcher
 import ai.openclaw.app.node.LocationCaptureManager
 import ai.openclaw.app.node.LocationHandler
@@ -45,6 +46,8 @@ import ai.openclaw.app.node.asStringOrNull
 import ai.openclaw.app.node.invokeErrorFromThrowable
 import ai.openclaw.app.node.parseHexColorArgb
 import ai.openclaw.app.protocol.OpenClawCanvasA2UIAction
+import ai.openclaw.app.voice.AiPcWhisperClient
+import ai.openclaw.app.voice.KittenFastTtsClient
 import ai.openclaw.app.voice.MicCaptureManager
 import ai.openclaw.app.voice.TalkModeManager
 import ai.openclaw.app.voice.VoiceConversationEntry
@@ -203,6 +206,11 @@ class NodeRuntime(
       appContext = appContext,
     )
 
+  private val healthHandler: HealthHandler =
+    HealthHandler(
+      appContext = appContext,
+    )
+
   private val smsHandlerImpl: SmsHandler =
     SmsHandler(
       sms = sms,
@@ -222,7 +230,8 @@ class NodeRuntime(
       voiceWakeMode = { VoiceWakeMode.Off },
       motionActivityAvailable = { motionHandler.isActivityAvailable() },
       motionPedometerAvailable = { motionHandler.isPedometerAvailable() },
-      sendSmsAvailable = { SensitiveFeatureConfig.smsEnabled && sms.canSendSms() },
+      healthSleepAvailable = { healthHandler.isSleepAvailable() },
+      sendSmsAvailable = { SensitiveFeatureConfig.smsEnabled && sms.hasTelephonyFeature() },
       readSmsAvailable = { SensitiveFeatureConfig.smsEnabled && sms.canReadSms() },
       smsSearchPossible = { SensitiveFeatureConfig.smsEnabled && sms.hasTelephonyFeature() },
       callLogAvailable = { SensitiveFeatureConfig.callLogEnabled },
@@ -254,6 +263,7 @@ class NodeRuntime(
       contactsHandler = contactsHandler,
       calendarHandler = calendarHandler,
       motionHandler = motionHandler,
+      healthHandler = healthHandler,
       smsHandler = smsHandlerImpl,
       a2uiHandler = a2uiHandler,
       debugHandler = debugHandler,
@@ -261,7 +271,7 @@ class NodeRuntime(
       isForeground = { _isForeground.value },
       cameraEnabled = { cameraEnabled.value },
       locationEnabled = { locationMode.value != LocationMode.Off },
-      sendSmsAvailable = { SensitiveFeatureConfig.smsEnabled && sms.canSendSms() },
+      sendSmsAvailable = { SensitiveFeatureConfig.smsEnabled && sms.hasTelephonyFeature() },
       readSmsAvailable = { SensitiveFeatureConfig.smsEnabled && sms.canReadSms() },
       smsFeatureEnabled = { SensitiveFeatureConfig.smsEnabled },
       smsTelephonyAvailable = { sms.hasTelephonyFeature() },
@@ -277,6 +287,7 @@ class NodeRuntime(
       onCanvasA2uiReset = { _canvasA2uiHydrated.value = false },
       motionActivityAvailable = { motionHandler.isActivityAvailable() },
       motionPedometerAvailable = { motionHandler.isPedometerAvailable() },
+      healthSleepAvailable = { healthHandler.isSleepAvailable() },
     )
 
   /**
@@ -701,6 +712,44 @@ class NodeRuntime(
       onBeforeSpeak = { micCapture.pauseForTts() },
       onAfterSpeak = { micCapture.resumeAfterTts() },
       onStoppedByRelay = { finishTalkModeAfterRelayClose() },
+      createTranscriptionSession = {
+        val params =
+          buildJsonObject {
+            put("mode", JsonPrimitive("transcription"))
+            put("transport", JsonPrimitive("gateway-relay"))
+            put("brain", JsonPrimitive("none"))
+          }
+        val response =
+          operatorSession.request(
+            "talk.session.create",
+            params.toString(),
+            timeoutMs = 15_000,
+          )
+        parseTalkSessionId(response)
+      },
+      appendTranscriptionAudio = { sessionId, audio, onError ->
+        val params =
+          buildJsonObject {
+            put("sessionId", JsonPrimitive(sessionId))
+            put("audioBase64", JsonPrimitive(Base64.encodeToString(audio, Base64.NO_WRAP)))
+            put("timestamp", JsonPrimitive(SystemClock.elapsedRealtime()))
+          }
+        operatorSession.sendRequestFrame(
+          "talk.session.appendAudio",
+          params.toString(),
+          timeoutMs = 8_000,
+        ) { error -> onError(error.message) }
+      },
+      closeTranscriptionSession = { sessionId ->
+        val params = buildJsonObject { put("sessionId", JsonPrimitive(sessionId)) }
+        operatorSession.request(
+          "talk.session.close",
+          params.toString(),
+          timeoutMs = 5_000,
+        )
+      },
+      localTranscriptionClient = AiPcWhisperClient(),
+      localSpeechClient = KittenFastTtsClient(),
     )
   }
 
@@ -1219,6 +1268,20 @@ class NodeRuntime(
   }
 
   fun setMicEnabled(value: Boolean) {
+    if (value && _voiceCaptureMode.value == VoiceCaptureMode.ManualMic) {
+      prefs.setVoiceMicEnabled(true)
+      NodeForegroundService.setVoiceCaptureMode(appContext, VoiceCaptureMode.ManualMic)
+      stopVoicePlayback()
+      micCapture.setMicEnabled(true)
+      externalAudioCaptureActive.value = true
+      return
+    }
+    if (!value && _voiceCaptureMode.value == VoiceCaptureMode.Off) {
+      micCapture.setMicEnabled(false)
+      prefs.setVoiceMicEnabled(false)
+      externalAudioCaptureActive.value = false
+      return
+    }
     setVoiceCaptureMode(if (value) VoiceCaptureMode.ManualMic else VoiceCaptureMode.Off)
   }
 

@@ -35,6 +35,7 @@ class OpenClawProtocolConstantsTest {
     assertEquals("contacts", OpenClawCapability.Contacts.rawValue)
     assertEquals("calendar", OpenClawCapability.Calendar.rawValue)
     assertEquals("motion", OpenClawCapability.Motion.rawValue)
+    assertEquals("health", OpenClawCapability.Health.rawValue)
     assertEquals("callLog", OpenClawCapability.CallLog.rawValue)
   }
 
@@ -86,6 +87,15 @@ class OpenClawProtocolConstantsTest {
   fun motionCommandsUseStableStrings() {
     assertEquals("motion.activity", OpenClawMotionCommand.Activity.rawValue)
     assertEquals("motion.pedometer", OpenClawMotionCommand.Pedometer.rawValue)
+  }
+
+  @Test
+  fun healthCommandsUseStableStrings() {
+    assertEquals("health.sleep", OpenClawHealthCommand.Sleep.rawValue)
+    assertEquals("health.heartRate", OpenClawHealthCommand.HeartRate.rawValue)
+    assertEquals("health.steps", OpenClawHealthCommand.Steps.rawValue)
+    assertEquals("health.weight", OpenClawHealthCommand.Weight.rawValue)
+    assertEquals("health.oxygenSaturation", OpenClawHealthCommand.OxygenSaturation.rawValue)
   }
 
   @Test

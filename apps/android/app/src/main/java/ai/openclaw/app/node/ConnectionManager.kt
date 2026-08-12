@@ -22,6 +22,7 @@ class ConnectionManager(
   private val voiceWakeMode: () -> VoiceWakeMode,
   private val motionActivityAvailable: () -> Boolean,
   private val motionPedometerAvailable: () -> Boolean,
+  private val healthSleepAvailable: () -> Boolean,
   private val sendSmsAvailable: () -> Boolean,
   private val readSmsAvailable: () -> Boolean,
   private val smsSearchPossible: () -> Boolean,
@@ -117,6 +118,7 @@ class ConnectionManager(
       motionActivityAvailable = motionActivityAvailable(),
       motionPedometerAvailable = motionPedometerAvailable(),
       installedAppsSharingEnabled = installedAppsSharingEnabled(),
+      healthSleepAvailable = healthSleepAvailable(),
       debugBuild = BuildConfig.DEBUG,
     )
 

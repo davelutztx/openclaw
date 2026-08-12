@@ -216,6 +216,8 @@ dependencies {
 
   implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.exifinterface)
+  implementation(libs.androidx.health.connect.client)
+  implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.okhttp)
   implementation(libs.bcprov)
   implementation(libs.commonmark)

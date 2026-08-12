@@ -6,6 +6,7 @@ import ai.openclaw.app.protocol.OpenClawCameraCommand
 import ai.openclaw.app.protocol.OpenClawCapability
 import ai.openclaw.app.protocol.OpenClawContactsCommand
 import ai.openclaw.app.protocol.OpenClawDeviceCommand
+import ai.openclaw.app.protocol.OpenClawHealthCommand
 import ai.openclaw.app.protocol.OpenClawLocationCommand
 import ai.openclaw.app.protocol.OpenClawMotionCommand
 import ai.openclaw.app.protocol.OpenClawNotificationsCommand
@@ -41,6 +42,7 @@ class InvokeCommandRegistryTest {
       OpenClawCapability.VoiceWake.rawValue,
       OpenClawCapability.Motion.rawValue,
       OpenClawCapability.Photos.rawValue,
+      OpenClawCapability.Health.rawValue,
     )
 
   private val coreCommands =
@@ -70,6 +72,11 @@ class InvokeCommandRegistryTest {
       OpenClawLocationCommand.Get.rawValue,
       OpenClawMotionCommand.Activity.rawValue,
       OpenClawMotionCommand.Pedometer.rawValue,
+      OpenClawHealthCommand.Sleep.rawValue,
+      OpenClawHealthCommand.HeartRate.rawValue,
+      OpenClawHealthCommand.Steps.rawValue,
+      OpenClawHealthCommand.Weight.rawValue,
+      OpenClawHealthCommand.OxygenSaturation.rawValue,
       OpenClawSmsCommand.Send.rawValue,
       OpenClawSmsCommand.Search.rawValue,
       OpenClawCallLogCommand.Search.rawValue,
@@ -101,6 +108,7 @@ class InvokeCommandRegistryTest {
           voiceWakeEnabled = true,
           motionActivityAvailable = true,
           motionPedometerAvailable = true,
+          healthSleepAvailable = true,
         ),
       )
 
@@ -138,6 +146,7 @@ class InvokeCommandRegistryTest {
           photosAvailable = true,
           motionActivityAvailable = true,
           motionPedometerAvailable = true,
+          healthSleepAvailable = true,
           debugBuild = true,
         ),
       )
@@ -161,6 +170,7 @@ class InvokeCommandRegistryTest {
           motionActivityAvailable = true,
           motionPedometerAvailable = false,
           installedAppsSharingEnabled = false,
+          healthSleepAvailable = false,
           debugBuild = false,
         ),
       )
@@ -273,6 +283,7 @@ class InvokeCommandRegistryTest {
     motionActivityAvailable: Boolean = false,
     motionPedometerAvailable: Boolean = false,
     installedAppsSharingEnabled: Boolean = false,
+    healthSleepAvailable: Boolean = false,
     debugBuild: Boolean = false,
   ): NodeRuntimeFlags =
     NodeRuntimeFlags(
@@ -287,6 +298,7 @@ class InvokeCommandRegistryTest {
       motionActivityAvailable = motionActivityAvailable,
       motionPedometerAvailable = motionPedometerAvailable,
       installedAppsSharingEnabled = installedAppsSharingEnabled,
+      healthSleepAvailable = healthSleepAvailable,
       debugBuild = debugBuild,
     )
 
