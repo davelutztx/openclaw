@@ -258,6 +258,29 @@ class SmsManagerTest {
   }
 
   @Test
+  fun buildFallbackSendPlanSplitsUnicodeMessageForMultipartSend() {
+    val message = "a".repeat(67) + "🎂" + "b"
+    val plan = SmsManager.buildFallbackSendPlan(message)
+
+    assertTrue(plan.useMultipart)
+    assertEquals(listOf("a".repeat(67), "🎂b"), plan.parts)
+  }
+
+  @Test
+  fun shouldUseLocalSmsSplitFallbackForSamsungGroupIdFailure() {
+    val error = SecurityException("getGroupIdLevel1")
+
+    assertTrue(SmsManager.shouldUseLocalSmsSplitFallback(error))
+  }
+
+  @Test
+  fun shouldNotUseLocalSmsSplitFallbackForOtherSecurityFailures() {
+    val error = SecurityException("sendSms permission denied")
+
+    assertFalse(SmsManager.shouldUseLocalSmsSplitFallback(error))
+  }
+
+  @Test
   fun parseQueryParamsAcceptsEmptyPayload() {
     val result = SmsManager.parseQueryParams(null, json)
     assertTrue(result is SmsManager.QueryParseResult.Ok)

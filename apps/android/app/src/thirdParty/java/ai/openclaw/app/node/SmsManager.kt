@@ -2,14 +2,26 @@ package ai.openclaw.app.node
 
 import ai.openclaw.app.PermissionRequester
 import android.Manifest
+import android.app.Activity
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.database.ContentObserver
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -119,12 +131,35 @@ class SmsManager(
     val useMultipart: Boolean,
   )
 
+  internal data class SentPartResult(
+    val index: Int,
+    val resultCode: Int,
+  )
+
+  private enum class SendConfirmation {
+    ProviderAccepted,
+    SentIntent,
+  }
+
+  private data class SentIntentSet(
+    val action: String,
+    val intents: ArrayList<PendingIntent>,
+  )
+
+  private data class ProviderAcceptanceListener(
+    val observer: ContentObserver,
+    val completed: CompletableDeferred<Unit>,
+  )
+
   companion object {
     private const val DEFAULT_SMS_LIMIT = 25
     internal const val MAX_MIXED_BY_PHONE_CANDIDATE_WINDOW = 500
     private const val MMS_SMS_BY_PHONE_BASE = "content://mms-sms/messages/byphone"
     private const val MMS_CONTENT_BASE = "content://mms"
     private const val MMS_PART_URI = "content://mms/part"
+    private const val EXTRA_SENT_PART_INDEX = "ai.openclaw.app.extra.SMS_SENT_PART_INDEX"
+    private const val SMS_PROVIDER_CONFIRM_TIMEOUT_MS = 5_000L
+    private const val SMS_SENT_RESULT_TIMEOUT_MS = 15_000L
     private val PHONE_FORMATTING_REGEX = Regex("""[\s\-()]""")
     internal val JsonConfig = Json { ignoreUnknownKeys = true }
 
@@ -509,6 +544,42 @@ class SmsManager(
       return SendPlan(parts = parts, useMultipart = parts.size > 1)
     }
 
+    internal fun buildFallbackSendPlan(message: String): SendPlan {
+      val parts = splitIntoCodePointChunks(message, maxCodePoints = 67)
+      return SendPlan(
+        parts = parts,
+        useMultipart = parts.size > 1,
+      )
+    }
+
+    internal fun splitIntoCodePointChunks(
+      message: String,
+      maxCodePoints: Int,
+    ): List<String> {
+      require(maxCodePoints > 0)
+      if (message.isEmpty()) {
+        return listOf(message)
+      }
+
+      val parts = mutableListOf<String>()
+      var start = 0
+      while (start < message.length) {
+        var end = start
+        var count = 0
+        while (end < message.length && count < maxCodePoints) {
+          val codePoint = message.codePointAt(end)
+          end += Character.charCount(codePoint)
+          count += 1
+        }
+        parts += message.substring(start, end)
+        start = end
+      }
+      return parts
+    }
+
+    internal fun shouldUseLocalSmsSplitFallback(error: SecurityException): Boolean =
+      error.message?.contains("getGroupIdLevel1", ignoreCase = true) == true
+
     internal fun buildPayloadJson(
       json: Json = JsonConfig,
       ok: Boolean,
@@ -614,27 +685,50 @@ class SmsManager(
     val params = (parseResult as ParseResult.Ok).params
 
     return try {
-      val smsManager =
-        context.getSystemService(AndroidSmsManager::class.java)
-          ?: throw IllegalStateException("SMS_UNAVAILABLE: SmsManager not available")
+      val requestedAtMs = System.currentTimeMillis()
+      @Suppress("DEPRECATION")
+      val smsManager = AndroidSmsManager.getDefault()
+        ?: throw IllegalStateException("SMS_UNAVAILABLE: SmsManager not available")
 
-      val plan = buildSendPlan(params.message) { smsManager.divideMessage(it) }
+      val plan =
+        try {
+          buildSendPlan(params.message) { smsManager.divideMessage(it) }
+        } catch (e: SecurityException) {
+          if (!shouldUseLocalSmsSplitFallback(e)) {
+            throw e
+          }
+          buildFallbackSendPlan(params.message)
+        }
       if (plan.useMultipart) {
-        smsManager.sendMultipartTextMessage(
-          params.to,
-          null,
-          ArrayList(plan.parts),
-          null,
-          null,
-        )
+        val sentIntents = buildSentIntents(plan.parts.size)
+        sendAndConfirm(
+          params = params,
+          requestedAtMs = requestedAtMs,
+          sentIntents = sentIntents,
+        ) {
+          smsManager.sendMultipartTextMessage(
+            params.to,
+            null,
+            ArrayList(plan.parts),
+            sentIntents.intents,
+            null,
+          )
+        }
       } else {
-        smsManager.sendTextMessage(
-          params.to,
-          null,
-          params.message,
-          null,
-          null,
-        )
+        val sentIntents = buildSentIntents(1)
+        sendAndConfirm(
+          params = params,
+          requestedAtMs = requestedAtMs,
+          sentIntents = sentIntents,
+        ) {
+          smsManager.sendTextMessage(
+            params.to,
+            null,
+            params.message,
+            sentIntents.intents.first(),
+            null,
+          )
+        }
       }
 
       okResult(to = params.to, message = params.message)
@@ -755,6 +849,198 @@ class SmsManager(
     val results = requester.requestIfMissing(listOf(Manifest.permission.READ_CONTACTS))
     return results[Manifest.permission.READ_CONTACTS] == true
   }
+
+  private suspend fun sendAndConfirm(
+    params: ParsedParams,
+    requestedAtMs: Long,
+    sentIntents: SentIntentSet,
+    sendBlock: () -> Unit,
+  ): SendConfirmation {
+    val sentResults = listenForSentResults(sentIntents)
+    val providerAcceptance = listenForProviderAcceptance()
+    try {
+      sendBlock()
+      if (awaitProviderAccepted(providerAcceptance, params, requestedAtMs)) {
+        return SendConfirmation.ProviderAccepted
+      }
+      awaitSentResults(sentResults, sentIntents.intents.size)
+      return SendConfirmation.SentIntent
+    } finally {
+      runCatching { context.unregisterReceiver(sentResults.receiver) }
+      runCatching { context.contentResolver.unregisterContentObserver(providerAcceptance.observer) }
+    }
+  }
+
+  private fun buildSentIntents(partCount: Int): SentIntentSet {
+    val action = "${context.packageName}.SMS_SENT.${System.currentTimeMillis()}.${System.nanoTime()}"
+    val flags =
+      PendingIntent.FLAG_UPDATE_CURRENT or
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+    val intents =
+      (0 until partCount).mapTo(ArrayList()) { index ->
+        PendingIntent.getBroadcast(
+          context,
+          (System.nanoTime() and Int.MAX_VALUE.toLong()).toInt() + index,
+          Intent(action)
+            .setPackage(context.packageName)
+            .putExtra(EXTRA_SENT_PART_INDEX, index),
+          flags,
+        )
+      }
+    return SentIntentSet(action = action, intents = intents)
+  }
+
+  private data class SentResultListener(
+    val receiver: BroadcastReceiver,
+    val completed: CompletableDeferred<List<SentPartResult>>,
+  )
+
+  private fun listenForSentResults(sentIntents: SentIntentSet): SentResultListener {
+    val results = mutableListOf<SentPartResult>()
+    val completed = CompletableDeferred<List<SentPartResult>>()
+    val expectedCount = sentIntents.intents.size
+    val receiver =
+      object : BroadcastReceiver() {
+        override fun onReceive(
+          context: Context,
+          intent: Intent,
+        ) {
+          if (intent.action != sentIntents.action) return
+          results += SentPartResult(
+            index = intent.getIntExtra(EXTRA_SENT_PART_INDEX, results.size),
+            resultCode = resultCode,
+          )
+          if (results.size >= expectedCount && !completed.isCompleted) {
+            completed.complete(results.toList())
+          }
+        }
+      }
+
+    registerSentReceiver(receiver, sentIntents.action)
+    return SentResultListener(receiver = receiver, completed = completed)
+  }
+
+  private fun listenForProviderAcceptance(): ProviderAcceptanceListener {
+    val completed = CompletableDeferred<Unit>()
+    val observer =
+      object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(
+          selfChange: Boolean,
+          uri: Uri?,
+        ) {
+          if (!completed.isCompleted && isSmsProviderChange(uri)) {
+            completed.complete(Unit)
+          }
+        }
+
+        override fun onChange(selfChange: Boolean) {
+          if (!completed.isCompleted) {
+            completed.complete(Unit)
+          }
+        }
+      }
+    context.contentResolver.registerContentObserver(
+      Telephony.Sms.CONTENT_URI,
+      true,
+      observer,
+    )
+    return ProviderAcceptanceListener(observer = observer, completed = completed)
+  }
+
+  private fun isSmsProviderChange(uri: Uri?): Boolean {
+    if (uri == null) return true
+    return uri.scheme == "content" &&
+      (uri.authority == Telephony.Sms.CONTENT_URI.authority || uri.toString().startsWith(Telephony.Sms.CONTENT_URI.toString()))
+  }
+
+  private suspend fun awaitSentResults(
+    listener: SentResultListener,
+    expectedCount: Int,
+  ) {
+    val sentResults = withTimeout(SMS_SENT_RESULT_TIMEOUT_MS) { listener.completed.await() }
+    val failed = sentResults.firstOrNull { it.resultCode != Activity.RESULT_OK }
+    if (failed != null) {
+      throw IllegalStateException(
+        "SMS_SEND_FAILED: part ${failed.index + 1}/$expectedCount ${sentResultCodeMessage(failed.resultCode)}",
+      )
+    }
+  }
+
+  private suspend fun awaitProviderAccepted(
+    listener: ProviderAcceptanceListener,
+    params: ParsedParams,
+    requestedAtMs: Long,
+  ): Boolean {
+    if (runCatching { withTimeout(SMS_PROVIDER_CONFIRM_TIMEOUT_MS) { listener.completed.await() } }.isSuccess) {
+      return true
+    }
+    val deadline = System.currentTimeMillis() + SMS_PROVIDER_CONFIRM_TIMEOUT_MS
+    while (System.currentTimeMillis() < deadline) {
+      if (providerHasMatchingOutgoingMessage(params, requestedAtMs)) {
+        return true
+      }
+      delay(100L)
+    }
+    return false
+  }
+
+  private fun providerHasMatchingOutgoingMessage(
+    params: ParsedParams,
+    requestedAtMs: Long,
+  ): Boolean {
+    val normalizedTo = normalizePhoneNumberOrNull(params.to)
+    val cursor =
+      context.contentResolver.query(
+        Telephony.Sms.CONTENT_URI,
+        arrayOf(
+          Telephony.Sms.ADDRESS,
+          Telephony.Sms.BODY,
+          Telephony.Sms.DATE,
+          Telephony.Sms.TYPE,
+        ),
+        "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms.BODY} = ? AND ${Telephony.Sms.TYPE} = ?",
+        arrayOf(
+          requestedAtMs.toString(),
+          params.message,
+          Telephony.Sms.MESSAGE_TYPE_SENT.toString(),
+        ),
+        "${Telephony.Sms.DATE} DESC",
+      ) ?: return false
+
+    cursor.use {
+      val addressIndex = it.getColumnIndex(Telephony.Sms.ADDRESS)
+      while (it.moveToNext()) {
+        val address = if (addressIndex >= 0) it.getString(addressIndex) else null
+        if (normalizedTo == null || normalizePhoneNumberOrNull(address) == normalizedTo) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  private fun registerSentReceiver(
+    receiver: BroadcastReceiver,
+    action: String,
+  ) {
+    val filter = IntentFilter(action)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+    } else {
+      @Suppress("DEPRECATION")
+      context.registerReceiver(receiver, filter)
+    }
+  }
+
+  private fun sentResultCodeMessage(resultCode: Int): String =
+    when (resultCode) {
+      Activity.RESULT_OK -> "sent"
+      AndroidSmsManager.RESULT_ERROR_GENERIC_FAILURE -> "generic failure"
+      AndroidSmsManager.RESULT_ERROR_NO_SERVICE -> "no service"
+      AndroidSmsManager.RESULT_ERROR_NULL_PDU -> "null PDU"
+      AndroidSmsManager.RESULT_ERROR_RADIO_OFF -> "radio off"
+      else -> "resultCode=$resultCode"
+    }
 
   private fun okResult(
     to: String,
