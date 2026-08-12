@@ -94,6 +94,7 @@ fun VoiceScreen(
   val speakerEnabled by viewModel.speakerEnabled.collectAsState()
   val micStatusText by viewModel.micStatusText.collectAsState()
   val micLiveTranscript by viewModel.micLiveTranscript.collectAsState()
+  val micIsListening by viewModel.micIsListening.collectAsState()
   val micQueuedMessages by viewModel.micQueuedMessages.collectAsState()
   val micConversation by viewModel.micConversation.collectAsState()
   val micIsSending by viewModel.micIsSending.collectAsState()
@@ -150,6 +151,7 @@ fun VoiceScreen(
       entries = talkModeConversation,
       listening = talkModeListening,
       speaking = talkModeSpeaking,
+      statusText = talkModeStatusText,
       speakerEnabled = speakerEnabled,
       onToggleSpeaker = { viewModel.setSpeakerEnabled(!speakerEnabled) },
       onEndTalk = { viewModel.setTalkModeEnabled(false) },
@@ -164,7 +166,7 @@ fun VoiceScreen(
     DictationScreen(
       liveTranscript = micLiveTranscript,
       conversation = micConversation,
-      listening = micEnabled,
+      listening = micIsListening,
       sending = micIsSending,
       statusText = activeStatus,
       gatewayStatus = gatewayStatus,
@@ -393,11 +395,20 @@ private fun TalkSessionScreen(
   entries: List<VoiceConversationEntry>,
   listening: Boolean,
   speaking: Boolean,
+  statusText: String,
   speakerEnabled: Boolean,
   onToggleSpeaker: () -> Unit,
   onEndTalk: () -> Unit,
   onOpenVoiceSettings: () -> Unit,
 ) {
+  val trimmedStatus = statusText.trim()
+  val displayStatus =
+    when {
+      trimmedStatus.isNotEmpty() && trimmedStatus != "Off" -> trimmedStatus
+      speaking -> "OpenClaw speaking"
+      listening -> "Listening"
+      else -> "Connected"
+    }
   Column(
     modifier =
       Modifier
@@ -409,24 +420,46 @@ private fun TalkSessionScreen(
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       ClawPlainIconButton(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to voice", onClick = onEndTalk)
       Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(text = "Realtime Talk", style = ClawTheme.type.title.copy(fontSize = 16.sp, lineHeight = 20.sp), color = ClawTheme.colors.text)
+        Text(text = "Talk", style = ClawTheme.type.title.copy(fontSize = 16.sp, lineHeight = 20.sp), color = ClawTheme.colors.text)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           Box(modifier = Modifier.size(4.5.dp).clip(CircleShape).background(if (speaking || listening) ClawTheme.colors.success else ClawTheme.colors.textSubtle))
           Text(
-            text =
-              if (speaking) {
-                "OpenClaw speaking"
-              } else if (listening) {
-                "Realtime voice"
-              } else {
-                "Connected"
-              },
+            text = displayStatus,
             style = ClawTheme.type.body,
             color = ClawTheme.colors.textMuted,
           )
         }
       }
       ClawPlainIconButton(icon = Icons.Default.Info, contentDescription = "Talk settings", onClick = onOpenVoiceSettings)
+    }
+
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(ClawTheme.radii.panel),
+      color = ClawTheme.colors.surface,
+      border = BorderStroke(1.dp, ClawTheme.colors.borderStrong),
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Box(
+          modifier =
+            Modifier
+              .size(10.dp)
+              .clip(CircleShape)
+              .background(if (speaking || listening || displayStatus.startsWith("Sending") || displayStatus.startsWith("Thinking")) ClawTheme.colors.success else ClawTheme.colors.textSubtle),
+        )
+        Text(
+          text = displayStatus,
+          modifier = Modifier.weight(1f),
+          style = ClawTheme.type.title.copy(fontSize = 20.sp, lineHeight = 25.sp),
+          color = ClawTheme.colors.text,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
     }
 
     Surface(

@@ -113,6 +113,7 @@ internal class MicCaptureManager(
   private var gatewayConnected = false
 
   @Volatile private var transcriptionSessionId: String? = null
+  @Volatile private var closingTranscriptionSessionId: String? = null
   private var transcriptionStartJob: Job? = null
   private var transcriptionCaptureJob: Job? = null
   private var transcriptionAppendJob: Job? = null
@@ -355,7 +356,7 @@ internal class MicCaptureManager(
       _statusText.value = "Mic on · waiting for gateway"
       return
     }
-    if (transcriptionSessionId != null || transcriptionStartJob?.isActive == true) return
+    if (transcriptionSessionId != null || closingTranscriptionSessionId != null || transcriptionStartJob?.isActive == true) return
 
     val startJob =
       scope.launch {
@@ -399,8 +400,9 @@ internal class MicCaptureManager(
   private fun stopTranscription(preserveStatus: Boolean = false) {
     val status = _statusText.value
     val sessionId = transcriptionSessionId
-    transcriptionSessionId = null
+    val alreadyClosing = sessionId != null && closingTranscriptionSessionId == sessionId
     if (sessionId != null) {
+      closingTranscriptionSessionId = sessionId
       transcriptionStartJob?.cancel()
       transcriptionStartJob = null
     } else if (transcriptionStartJob?.isActive != true) {
@@ -419,13 +421,21 @@ internal class MicCaptureManager(
     } else {
       _statusText.value = status
     }
-    if (!sessionId.isNullOrBlank()) {
+    if (!sessionId.isNullOrBlank() && !alreadyClosing) {
       scope.launch {
         try {
           closeTranscriptionSession(sessionId)
         } catch (err: Throwable) {
           if (err !is CancellationException) {
             Log.d(tag, "transcription close ignored: ${err.message ?: err::class.simpleName}")
+          }
+        } finally {
+          delay(1_000L)
+          if (transcriptionSessionId == sessionId) {
+            transcriptionSessionId = null
+          }
+          if (closingTranscriptionSessionId == sessionId) {
+            closingTranscriptionSessionId = null
           }
         }
       }
@@ -707,9 +717,12 @@ internal class MicCaptureManager(
       } catch (_: Throwable) {
         null
       } ?: return
-    val sessionId = obj["transcriptionSessionId"].asStringOrNull() ?: obj["sessionId"].asStringOrNull()
+    val sessionId =
+      (obj["transcriptionSessionId"].asStringOrNull() ?: obj["sessionId"].asStringOrNull())
+        ?.takeIf { it.isNotBlank() } ?: return
     val currentSessionId = transcriptionSessionId
-    if (currentSessionId == null || sessionId != currentSessionId) return
+    val closingSessionId = closingTranscriptionSessionId
+    if (sessionId != currentSessionId && sessionId != closingSessionId) return
 
     when (obj["type"].asStringOrNull()) {
       "ready", "inputAudio", "speechStart" -> {
@@ -743,11 +756,25 @@ internal class MicCaptureManager(
             ?.trim()
             .orEmpty()
             .ifEmpty { "transcription failed" }
-        failTranscription(currentSessionId, message)
+        failTranscription(sessionId, message)
       }
       "close" -> {
         _micEnabled.value = false
-        stopTranscription()
+        if (transcriptionSessionId == sessionId) {
+          transcriptionSessionId = null
+        }
+        if (closingTranscriptionSessionId == sessionId) {
+          closingTranscriptionSessionId = null
+        }
+        transcriptionCaptureJob?.cancel()
+        transcriptionAppendJob?.cancel()
+        transcriptionCaptureJob = null
+        transcriptionAppendJob = null
+        transcriptFlushJob?.cancel()
+        transcriptFlushJob = null
+        _isListening.value = false
+        _inputLevel.value = 0f
+        _statusText.value = if (_isSending.value) "Mic off · sending…" else "Mic off"
       }
     }
   }

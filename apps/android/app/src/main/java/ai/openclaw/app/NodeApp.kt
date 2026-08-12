@@ -1,5 +1,6 @@
 package ai.openclaw.app
 
+import ai.openclaw.app.node.HealthSnapshotWorker
 import android.app.Application
 import android.os.StrictMode
 
@@ -28,6 +29,7 @@ class NodeApp : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    HealthSnapshotWorker.enqueue(this)
     if (BuildConfig.DEBUG) {
       StrictMode.setThreadPolicy(
         StrictMode.ThreadPolicy

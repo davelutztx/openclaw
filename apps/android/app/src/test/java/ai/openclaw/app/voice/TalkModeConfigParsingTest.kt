@@ -19,7 +19,12 @@ class TalkModeConfigParsingTest {
           {
             "talk": {
               "interruptOnSpeech": true,
-              "silenceTimeoutMs": 1800
+              "silenceTimeoutMs": 1800,
+              "remoteSpeechEnabled": true,
+              "realtime": {
+                "mode": "realtime",
+                "transport": "gateway-relay"
+              }
             },
             "session": {
               "mainKey": "voice-main"
@@ -33,6 +38,38 @@ class TalkModeConfigParsingTest {
     assertEquals("voice-main", parsed.mainSessionKey)
     assertEquals(true, parsed.interruptOnSpeech)
     assertEquals(1800L, parsed.silenceTimeoutMs)
+    assertEquals(true, parsed.realtimeModeEnabled)
+    assertEquals(true, parsed.remoteSpeechEnabled)
+  }
+
+  @Test
+  fun remoteSpeechDefaultsOff() {
+    val parsed = TalkModeGatewayConfigParser.parse(buildJsonObject {})
+
+    assertEquals(false, parsed.remoteSpeechEnabled)
+  }
+
+  @Test
+  fun realtimeModeRequiresExplicitGatewayRelay() {
+    assertEquals(false, TalkModeGatewayConfigParser.isRealtimeModeEnabled(null))
+    assertEquals(
+      false,
+      TalkModeGatewayConfigParser.isRealtimeModeEnabled(
+        buildJsonObject {
+          put("mode", "realtime")
+          put("transport", "webrtc")
+        },
+      ),
+    )
+    assertEquals(
+      true,
+      TalkModeGatewayConfigParser.isRealtimeModeEnabled(
+        buildJsonObject {
+          put("mode", "realtime")
+          put("transport", "gateway-relay")
+        },
+      ),
+    )
   }
 
   @Test

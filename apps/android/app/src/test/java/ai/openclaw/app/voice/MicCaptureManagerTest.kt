@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -276,6 +277,40 @@ class MicCaptureManagerTest {
       )
       assertEquals("transcription-1", privateField<String?>(manager, "transcriptionSessionId"))
       privateField<Job?>(manager, "transcriptionDrainJob")?.cancel()
+    }
+
+  @Test
+  @OptIn(ExperimentalCoroutinesApi::class)
+  fun finalTranscriptEmittedDuringCloseQueuesGatewayMessage() =
+    runTest {
+      lateinit var manager: MicCaptureManager
+      val sentMessages = mutableListOf<String>()
+      manager =
+        createManager(
+          scope = this,
+          closeTranscriptionSession = { sessionId ->
+            manager.handleGatewayEvent(
+              "talk.event",
+              """{"transcriptionSessionId":"$sessionId","type":"transcript","text":"batch whisper final","final":true}""",
+            )
+          },
+          sendToGateway = { message, onRunIdKnown ->
+            sentMessages += message
+            onRunIdKnown("run-1")
+            ChatSendAck(runId = "run-1", status = "started")
+          },
+        )
+
+      setPrivateMutableStateFlowValue(manager, "_micEnabled", true)
+      setPrivateField(manager, "transcriptionSessionId", "transcription-1")
+      manager.onGatewayConnectionChanged(true)
+      manager.setMicEnabled(false)
+      advanceTimeBy(2_000L)
+      runCurrent()
+
+      assertEquals(listOf("batch whisper final"), sentMessages)
+      manager.handleGatewayEvent("chat", chatFinalPayload(runId = "run-1", text = "reply"))
+      advanceUntilIdle()
     }
 
   @Test

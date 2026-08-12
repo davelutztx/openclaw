@@ -11,6 +11,8 @@ internal data class TalkModeGatewayConfigState(
   val mainSessionKey: String,
   val interruptOnSpeech: Boolean?,
   val silenceTimeoutMs: Long,
+  val realtimeModeEnabled: Boolean,
+  val remoteSpeechEnabled: Boolean,
 )
 
 internal object TalkModeGatewayConfigParser {
@@ -22,7 +24,15 @@ internal object TalkModeGatewayConfigParser {
       mainSessionKey = normalizeMainKey(sessionCfg?.get("mainKey").asStringOrNull()),
       interruptOnSpeech = talk?.get("interruptOnSpeech").asBooleanOrNull(),
       silenceTimeoutMs = resolvedSilenceTimeoutMs(talk),
+      realtimeModeEnabled = isRealtimeModeEnabled(talk?.get("realtime").asObjectOrNull()),
+      remoteSpeechEnabled = talk?.get("remoteSpeechEnabled").asBooleanOrNull() == true,
     )
+  }
+
+  fun isRealtimeModeEnabled(realtime: JsonObject?): Boolean {
+    val mode = realtime?.get("mode").asStringOrNull()?.trim()?.lowercase()
+    val transport = realtime?.get("transport").asStringOrNull()?.trim()?.lowercase()
+    return mode == "realtime" && transport == "gateway-relay"
   }
 
   /** Accepts only numeric whole-millisecond silence timeouts; malformed config uses defaults. */

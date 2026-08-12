@@ -508,7 +508,7 @@ class GatewaySession(
           .Builder()
           .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
           .readTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
-          .pingInterval(30, java.util.concurrent.TimeUnit.SECONDS)
+          .pingInterval(5, java.util.concurrent.TimeUnit.MINUTES)
       val tlsConfig =
         buildGatewayTlsConfig(tls) { fingerprint ->
           onTlsFingerprint?.invoke(tls?.stableId ?: endpoint.stableId, fingerprint)

@@ -10,6 +10,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 internal interface TalkAudioPlaying {
@@ -152,13 +153,16 @@ internal class TalkAudioPlayer(
           throw IllegalStateException("AudioTrack write failed")
         }
         val totalFrames = bytes.size / 2
+        val playbackTimeoutMs = estimatePcmPlaybackTimeoutMs(byteCount = bytes.size, sampleRate = sampleRate)
         track.play()
-        while (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-          if (track.playbackHeadPosition >= totalFrames) {
-            finished.complete(Unit)
-            break
+        withTimeoutOrNull(playbackTimeoutMs) {
+          while (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+            if (track.playbackHeadPosition >= totalFrames) {
+              finished.complete(Unit)
+              break
+            }
+            delay(20)
           }
-          delay(20)
         }
         if (!finished.isCompleted) {
           finished.complete(Unit)
@@ -178,6 +182,14 @@ internal class TalkAudioPlayer(
     bytes: ByteArray,
     fileExtension: String,
   ) {
+    if (fileExtension == ".wav") {
+      val wav = parsePcm16MonoWav(bytes)
+      if (wav != null) {
+        playPcm(wav.pcm, wav.sampleRate)
+        return
+      }
+    }
+
     // MediaPlayer needs a seekable data source for several compressed formats,
     // so cache the response bytes briefly instead of streaming from memory.
     val tempFile =
@@ -221,7 +233,11 @@ internal class TalkAudioPlayer(
         withContext(Dispatchers.Main) {
           player.start()
         }
-        finished.await()
+        val durationMs = withContext(Dispatchers.Main) { player.duration.takeIf { it > 0 } ?: 0 }
+        val playbackTimeoutMs = durationMs.coerceAtLeast(1_000) + 2_500L
+        withTimeoutOrNull(playbackTimeoutMs) {
+          finished.await()
+        }
       } finally {
         clear(playback)
         withContext(Dispatchers.Main) {
@@ -250,7 +266,76 @@ internal class TalkAudioPlayer(
       }
     }
   }
+
+  private fun estimatePcmPlaybackTimeoutMs(
+    byteCount: Int,
+    sampleRate: Int,
+  ): Long {
+    if (sampleRate <= 0) return 30_000L
+    val durationMs = ((byteCount / 2.0) / sampleRate * 1_000.0).toLong()
+    return durationMs.coerceAtLeast(1_000L) + 2_500L
+  }
+
+  private fun parsePcm16MonoWav(bytes: ByteArray): PcmWav? {
+    if (bytes.size < 44) return null
+    if (bytes.asciiAt(0, 4) != "RIFF" || bytes.asciiAt(8, 4) != "WAVE") return null
+    var offset = 12
+    var audioFormat: Int? = null
+    var channels: Int? = null
+    var sampleRate: Int? = null
+    var bitsPerSample: Int? = null
+    var dataOffset: Int? = null
+    var dataSize: Int? = null
+    while (offset + 8 <= bytes.size) {
+      val chunkId = bytes.asciiAt(offset, 4)
+      val chunkSize = bytes.readLeInt(offset + 4)
+      if (chunkSize < 0 || offset + 8 + chunkSize > bytes.size) return null
+      val bodyOffset = offset + 8
+      when (chunkId) {
+        "fmt " -> {
+          if (chunkSize < 16) return null
+          audioFormat = bytes.readLeShort(bodyOffset)
+          channels = bytes.readLeShort(bodyOffset + 2)
+          sampleRate = bytes.readLeInt(bodyOffset + 4)
+          bitsPerSample = bytes.readLeShort(bodyOffset + 14)
+        }
+        "data" -> {
+          dataOffset = bodyOffset
+          dataSize = chunkSize
+        }
+      }
+      offset = bodyOffset + chunkSize + (chunkSize % 2)
+    }
+    val start = dataOffset ?: return null
+    val size = dataSize ?: return null
+    val rate = sampleRate ?: return null
+    if (audioFormat != 1 || channels != 1 || bitsPerSample != 16 || rate <= 0) return null
+    return PcmWav(sampleRate = rate, pcm = bytes.copyOfRange(start, start + size))
+  }
+
+  private fun ByteArray.asciiAt(
+    offset: Int,
+    length: Int,
+  ): String {
+    if (offset < 0 || offset + length > size) return ""
+    return String(this, offset, length, Charsets.US_ASCII)
+  }
+
+  private fun ByteArray.readLeShort(offset: Int): Int =
+    (this[offset].toInt() and 0xff) or
+      ((this[offset + 1].toInt() and 0xff) shl 8)
+
+  private fun ByteArray.readLeInt(offset: Int): Int =
+    (this[offset].toInt() and 0xff) or
+      ((this[offset + 1].toInt() and 0xff) shl 8) or
+      ((this[offset + 2].toInt() and 0xff) shl 16) or
+      ((this[offset + 3].toInt() and 0xff) shl 24)
 }
+
+private data class PcmWav(
+  val sampleRate: Int,
+  val pcm: ByteArray,
+)
 
 internal sealed interface TalkPlaybackMode {
   /** Raw signed 16-bit mono PCM returned by providers that support low-latency output. */
