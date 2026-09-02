@@ -12,6 +12,7 @@ import ai.openclaw.app.gateway.GatewayTlsParams
 import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
+import androidx.work.Configuration
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -76,9 +77,14 @@ class HealthSnapshotWorker(
           .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
           .build()
 
-      WorkManager
-        .getInstance(context.applicationContext)
-        .enqueueUniquePeriodicWork(
+      val appContext = context.applicationContext
+      val workManager =
+        runCatching { WorkManager.getInstance(appContext) }
+          .getOrElse {
+            WorkManager.initialize(appContext, Configuration.Builder().build())
+            WorkManager.getInstance(appContext)
+          }
+      workManager.enqueueUniquePeriodicWork(
           HEALTH_SYNC_WORK_NAME,
           ExistingPeriodicWorkPolicy.UPDATE,
           request,

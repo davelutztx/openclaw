@@ -5,6 +5,7 @@ import ai.openclaw.app.gateway.testDeviceIdentityStore
 import ai.openclaw.app.protocol.OpenClawCallLogCommand
 import ai.openclaw.app.protocol.OpenClawCameraCommand
 import ai.openclaw.app.protocol.OpenClawDeviceCommand
+import ai.openclaw.app.protocol.OpenClawHealthCommand
 import ai.openclaw.app.protocol.OpenClawLocationCommand
 import ai.openclaw.app.protocol.OpenClawMobileUiCommand
 import ai.openclaw.app.protocol.OpenClawMotionCommand
@@ -274,6 +275,20 @@ class InvokeDispatcherTest {
     assertEquals(2, cameraReads)
     assertTrue(disabled.none { it in cameras })
   }
+
+  @Test
+  fun handleInvoke_blocksHealthWhenHealthConnectIsUnavailable() =
+    runTest {
+      val result =
+        newInvokeDispatcher(healthSleepAvailable = false)
+          .handleInvoke(OpenClawHealthCommand.Sleep.rawValue, null)
+
+      assertEquals("HEALTH_CONNECT_UNAVAILABLE", result.error?.code)
+      assertEquals(
+        "HEALTH_CONNECT_UNAVAILABLE: Health Connect data is not available on this device",
+        result.error?.message,
+      )
+    }
 
   @Test
   fun boundHandlerReceivesOpaqueParamsAndPropagatesFailureAndCancellation() =
