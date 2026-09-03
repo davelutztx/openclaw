@@ -1,6 +1,5 @@
 package ai.openclaw.app.node
 
-import ai.openclaw.app.LocationMode
 import ai.openclaw.app.SecurePrefs
 import ai.openclaw.app.gateway.DeviceAuthStore
 import ai.openclaw.app.gateway.DeviceIdentityStore
@@ -104,19 +103,8 @@ private class HealthSnapshotSync(
   private val connectionManager =
     ConnectionManager(
       prefs = prefs,
-      cameraEnabled = { false },
-      locationMode = { LocationMode.Off },
-      motionActivityAvailable = { false },
-      motionPedometerAvailable = { false },
-      healthSleepAvailable = { true },
-      sendSmsAvailable = { false },
-      readSmsAvailable = { false },
-      smsSearchPossible = { false },
-      callLogAvailable = { false },
-      photosAvailable = { false },
-      installedAppsSharingEnabled = { false },
-      voiceWakeAvailable = { false },
-      mobileUiAvailable = { false },
+      advertisedCapabilities = { emptyList() },
+      advertisedCommands = { emptyList() },
       inlineWidgetsAvailable = { false },
       permissionSnapshot = {
         readAndroidPermissionSnapshot(
@@ -127,7 +115,7 @@ private class HealthSnapshotSync(
           backgroundLocationEnabled = false,
         )
       },
-      manualTls = { prefs.manualTls.value },
+      manualTls = { _ -> prefs.manualTls.value },
     )
 
   suspend fun runOnce(): Boolean {
