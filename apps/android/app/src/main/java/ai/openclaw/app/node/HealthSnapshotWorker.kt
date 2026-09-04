@@ -34,7 +34,8 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 
 private const val HEALTH_SNAPSHOT_EVENT = "health.snapshot"
-internal const val HEALTH_SYNC_WORK_NAME = "openclaw-health-connect-sync"
+private const val LEGACY_HEALTH_SYNC_WORK_NAME = "openclaw-health-connect-sync"
+internal const val HEALTH_SYNC_WORK_NAME = "openclaw-health-connect-sync-v2"
 private const val HEALTH_SYNC_INTERVAL_HOURS = 3L
 
 class HealthSnapshotWorker(
@@ -60,13 +61,15 @@ class HealthSnapshotWorker(
 
   companion object {
     fun enqueue(context: Context) {
+      // Keep the default flex equal to the interval so the first run is governed
+      // only by the short initial delay. An explicit 30-minute flex delays the
+      // first WorkManager window until interval - flex.
       val request =
         PeriodicWorkRequestBuilder<HealthSnapshotWorker>(
           HEALTH_SYNC_INTERVAL_HOURS,
           TimeUnit.HOURS,
-          30,
-          TimeUnit.MINUTES,
-        ).setConstraints(
+        ).setInitialDelay(2, TimeUnit.MINUTES)
+          .setConstraints(
           Constraints
             .Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -81,6 +84,7 @@ class HealthSnapshotWorker(
             WorkManager.initialize(appContext, Configuration.Builder().build())
             WorkManager.getInstance(appContext)
           }
+      workManager.cancelUniqueWork(LEGACY_HEALTH_SYNC_WORK_NAME)
       workManager.enqueueUniquePeriodicWork(
         HEALTH_SYNC_WORK_NAME,
         ExistingPeriodicWorkPolicy.UPDATE,
