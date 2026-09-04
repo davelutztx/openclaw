@@ -2,6 +2,7 @@ package ai.openclaw.app
 
 import ai.openclaw.app.i18n.NativeStringResources
 import ai.openclaw.app.i18n.notifyNativeLocaleChanged
+import ai.openclaw.app.node.HealthSnapshotWorker
 import ai.openclaw.app.wear.GoogleWearMessageSender
 import ai.openclaw.app.wear.GoogleWearPeerResolver
 import ai.openclaw.app.wear.WearProxyBridge
@@ -100,6 +101,7 @@ class NodeApp : Application() {
   override fun onCreate() {
     super.onCreate()
     NativeStringResources.install(this)
+    HealthSnapshotWorker.enqueue(this)
     if (BuildConfig.DEBUG) {
       StrictMode.setThreadPolicy(
         StrictMode.ThreadPolicy

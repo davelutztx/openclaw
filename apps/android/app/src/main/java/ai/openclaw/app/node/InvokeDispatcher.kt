@@ -134,7 +134,10 @@ class InvokeDispatcher(
     )
   private val commandsByName = commands.associateBy(Command::name)
 
-  suspend fun handleInvoke(command: String, paramsJson: String?): GatewaySession.InvokeResult {
+  suspend fun handleInvoke(
+    command: String,
+    paramsJson: String?,
+  ): GatewaySession.InvokeResult {
     val binding = commandsByName[command] ?: return unavailable("INVALID_REQUEST", "unknown command")
     if (binding.requiresForeground && !isForeground()) {
       return unavailable("NODE_BACKGROUND_UNAVAILABLE", "command requires foreground")
@@ -172,13 +175,18 @@ class InvokeDispatcher(
       if (mobileUiGate.isAvailable()) add(OpenClawCapability.MobileUI.rawValue)
     }
 
-  private fun unavailable(code: String, message: String): GatewaySession.InvokeResult =
-    GatewaySession.InvokeResult.error(code, "$code: $message")
+  private fun unavailable(
+    code: String,
+    message: String,
+  ): GatewaySession.InvokeResult = GatewaySession.InvokeResult.error(code, "$code: $message")
 }
 
 interface TalkHandler {
   suspend fun handlePttStart(paramsJson: String?): GatewaySession.InvokeResult
+
   suspend fun handlePttStop(paramsJson: String?): GatewaySession.InvokeResult
+
   suspend fun handlePttCancel(paramsJson: String?): GatewaySession.InvokeResult
+
   suspend fun handlePttOnce(paramsJson: String?): GatewaySession.InvokeResult
 }

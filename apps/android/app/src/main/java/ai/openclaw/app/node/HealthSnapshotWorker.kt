@@ -10,8 +10,8 @@ import ai.openclaw.app.gateway.GatewaySession
 import ai.openclaw.app.gateway.GatewayTlsParams
 import android.content.Context
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.Configuration
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -34,7 +34,7 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 
 private const val HEALTH_SNAPSHOT_EVENT = "health.snapshot"
-private const val HEALTH_SYNC_WORK_NAME = "openclaw-health-connect-sync"
+internal const val HEALTH_SYNC_WORK_NAME = "openclaw-health-connect-sync"
 private const val HEALTH_SYNC_INTERVAL_HOURS = 3L
 
 class HealthSnapshotWorker(
@@ -66,14 +66,12 @@ class HealthSnapshotWorker(
           TimeUnit.HOURS,
           30,
           TimeUnit.MINUTES,
-        )
-          .setConstraints(
-            Constraints
-              .Builder()
-              .setRequiredNetworkType(NetworkType.CONNECTED)
-              .build(),
-          )
-          .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
+        ).setConstraints(
+          Constraints
+            .Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build(),
+        ).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
           .build()
 
       val appContext = context.applicationContext
@@ -84,10 +82,10 @@ class HealthSnapshotWorker(
             WorkManager.getInstance(appContext)
           }
       workManager.enqueueUniquePeriodicWork(
-          HEALTH_SYNC_WORK_NAME,
-          ExistingPeriodicWorkPolicy.UPDATE,
-          request,
-        )
+        HEALTH_SYNC_WORK_NAME,
+        ExistingPeriodicWorkPolicy.UPDATE,
+        request,
+      )
     }
   }
 }

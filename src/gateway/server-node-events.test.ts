@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 // Gateway node event tests protect how node clients surface inbound commands,
 // delivery metadata, pairing state, and outbound payload lifecycle events.
 import { expectDefined } from "@openclaw/normalization-core";
@@ -221,6 +224,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetGatewayWorkAdmission();
+  vi.unstubAllEnvs();
 });
 
 async function runAdmittedNodeEvent(
@@ -962,6 +966,60 @@ describe("node exec events", () => {
       handled: false,
       reason: "pairing_changed",
     });
+  });
+});
+
+describe("health snapshot events", () => {
+  it("appends valid snapshots to the configured private log", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "openclaw-health-snapshot-"));
+    const logPath = join(dir, "snapshots.jsonl");
+    vi.stubEnv("OPENCLAW_HEALTH_SNAPSHOT_LOG", logPath);
+
+    try {
+      const payload = {
+        schema: "health.snapshot.v1",
+        generatedAtISO: "2026-09-04T17:00:00Z",
+        sleep: [],
+      };
+      const result = await handleNodeEvent(buildCtx(), "node-health", {
+        event: "health.snapshot",
+        payloadJSON: JSON.stringify(payload),
+      });
+
+      expect(result).toEqual({ ok: true, event: "health.snapshot", handled: true });
+      const lines = (await readFile(logPath, "utf8")).trim().split("\n");
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({
+        nodeId: "node-health",
+        payload,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores malformed or unsupported snapshot payloads", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "openclaw-health-snapshot-"));
+    const logPath = join(dir, "snapshots.jsonl");
+    vi.stubEnv("OPENCLAW_HEALTH_SNAPSHOT_LOG", logPath);
+
+    try {
+      await expect(
+        handleNodeEvent(buildCtx(), "node-health", {
+          event: "health.snapshot",
+          payloadJSON: JSON.stringify({ schema: "health.snapshot.v2" }),
+        }),
+      ).resolves.toBeUndefined();
+      await expect(
+        handleNodeEvent(buildCtx(), "node-health", {
+          event: "health.snapshot",
+          payloadJSON: "not-json",
+        }),
+      ).resolves.toBeUndefined();
+      await expect(readFile(logPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

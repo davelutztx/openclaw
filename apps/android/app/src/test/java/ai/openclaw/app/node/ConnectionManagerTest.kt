@@ -435,9 +435,9 @@ class ConnectionManagerTest {
       newInvokeDispatcher(
         cameraEnabled = { cameraEnabled },
         locationEnabled = locationMode != LocationMode.Off,
-      motionActivityAvailable = motionActivityAvailable,
-      motionPedometerAvailable = motionPedometerAvailable,
-      healthSleepAvailable = healthSleepAvailable,
+        motionActivityAvailable = motionActivityAvailable,
+        motionPedometerAvailable = motionPedometerAvailable,
+        healthSleepAvailable = healthSleepAvailable,
         sendSmsAvailable = sendSmsAvailable,
         readSmsAvailable = readSmsAvailable,
         smsSearchPossible = { smsSearchPossible },

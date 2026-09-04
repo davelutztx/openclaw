@@ -45,6 +45,7 @@ import ai.openclaw.app.locationModeAfterBackgroundSettings
 import ai.openclaw.app.node.DeviceNotificationListenerService
 import ai.openclaw.app.node.HealthConnectRequestedPermissions
 import ai.openclaw.app.node.HealthHandler
+import ai.openclaw.app.node.HealthSnapshotWorker
 import ai.openclaw.app.photoReadPermissionsForRequest
 import ai.openclaw.app.reconcileRestoredAction
 import ai.openclaw.app.setAppLanguage
@@ -1415,6 +1416,9 @@ private fun PhoneCapabilitiesScreen(
   val healthPermissionLauncher =
     rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
       healthPermissionGranted = granted.containsAll(HealthConnectRequestedPermissions.all)
+      if (healthPermissionGranted) {
+        HealthSnapshotWorker.enqueue(context)
+      }
       viewModel.refreshNodePermissionSurface()
     }
 
